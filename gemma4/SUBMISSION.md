@@ -299,6 +299,43 @@ lastbox> Check USB-C cable AWG ≤20, no powered USB peripherals draining curren
 4. **Validation set drift**: 114-dialog val_v2 is too small relative to training noise — eval_loss is flat across checkpoints because differences are within noise. Bigger held-out set (≥300) needed for cleaner overfit detection.
 5. **Server disconnects under load**: ~36 % of golden eval queries hit the 180 s aiohttp timeout. The model handles each request fine in isolation; the issue is concurrent request queueing on a single CPU slot. Multi-slot llama-server config + per-source max_tokens would fix this without retraining.
 
+6. **Voice input — designed out for v1, wired for v2**: the original plan
+   included a ReSpeaker 2-Mic Pi HAT V2.0 + a tiny on-device Whisper for
+   spoken queries. We dropped it for the hackathon submission because the
+   physical HAT on hand shipped with a TLV320AIC3104 codec instead of the
+   advertised WM8960; the documented `seeed-2mic-voicecard` overlay fails
+   with `-121`, and the `googlevoicehat-soundcard` overlay loads cleanly but
+   leaves the AIC3104 ADC muted (capture returns RMS=0). Unmuting it requires
+   either a custom overlay using `snd-soc-tlv320aic3x` or a one-shot `i2cset`
+   register sequence — both feasible, neither shippable inside the deadline
+   without risking the rest of the submission. The next iteration adds an
+   `/asr` endpoint that pipes a short `arecord` capture through
+   `whisper.cpp tiny.en` (~75 MB GGML) and reuses the same `/radio-query`
+   downstream — the wiring is sketched in the orchestrator already.
+
+7. **LoRa hardware failure mid-week**: the SX1262 LoRa HAT on this lastbox
+   stopped responding during the hackathon week (power LED lit, but the four
+   SPI/control pins read as electrically floating; reseat did not change
+   anything). The mesh-radio code path in `demo.py` (`send_lora_message`,
+   `listen_lora`) and the Pip-Boy "RADIO" UI both run in *simulation* mode —
+   incoming queries are replied by the same fine-tuned model under the real
+   150-byte byte cap, but no packet leaves the box. `/mesh-status` returns
+   the real probe data (HAT down, no USB serial device, `meshtastic-py`
+   absent) rather than pretending the link is up. Plugging a Meshtastic
+   USB device or swapping in a working SX1262 would activate the wired path
+   without code changes.
+
+8. **NVMe controller crash on lastbox, ~2 h before deadline**: the SD-card
+   bundle was always the canonical source; the NVMe held the deployed copy.
+   When the NVMe controller faulted (`CSTS=0xffffffff`, classic RPi 5 PCIe
+   power-saving bug — kernel suggests
+   `nvme_core.default_ps_max_latency_us=0 pcie_aspm=off pcie_port_pm=off`),
+   the running llama-server container kept serving inference from the
+   mmap'd weights in RAM, but the filesystem was gone. The `webapp/` shipped
+   here was rebuilt from-scratch on the training host and deployed to the
+   SD card (stdlib Python, zero pip deps) specifically so the demo wouldn't
+   blink while the NVMe was being recovered.
+
 ---
 
 ## Reproducing this submission
