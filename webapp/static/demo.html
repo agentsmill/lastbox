@@ -76,7 +76,10 @@
     grid-template-columns: 1fr;
   }
   @media (min-width: 980px) {
-    main { grid-template-columns: minmax(420px, 1fr) 1fr; }
+    main {
+      grid-template-columns: minmax(420px, 1fr) 1fr;
+    }
+    main .full { grid-column: 1 / -1; }
   }
 
   .panel {
@@ -140,6 +143,64 @@
   .cam-actions button:hover { background: var(--fg); color: var(--bg-deep); }
   .cam-actions button[disabled] { opacity: 0.5; cursor: not-allowed;
     border-color: var(--fg-dim); color: var(--fg-dim); }
+
+  /* Big chat panel below */
+  .chat-log {
+    background: var(--bg-deep);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 16px 18px;
+    min-height: 240px; max-height: 50vh;
+    overflow-y: auto;
+    font-size: 17px; line-height: 1.6;
+    white-space: pre-wrap;
+  }
+  .chat-log .row { margin-bottom: 18px; }
+  .chat-log .role {
+    color: var(--fg-dim); font-size: 12px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .chat-log .role.user { color: var(--amber); }
+  .chat-log .role.lastbox { color: var(--fg-bright); }
+  .chat-log .text { padding-left: 4px; }
+  .chat-log .vision-tag {
+    color: #a3e1ff; font-size: 12px;
+    margin-left: 8px;
+  }
+  .chat-log img.thumb {
+    max-width: 240px; max-height: 160px; margin-top: 8px;
+    border: 1px solid var(--line); border-radius: 2px;
+    filter: hue-rotate(40deg) saturate(0.7);
+  }
+  .chat-log .meta { color: var(--fg-dim); font-size: 12px; margin-top: 4px; }
+  .chat-log .err { color: var(--err); }
+  .chat-input-row {
+    margin-top: 14px;
+    display: grid; grid-template-columns: 1fr auto auto; gap: 10px;
+  }
+  .chat-input-row textarea {
+    background: var(--bg-deep); color: var(--fg-bright);
+    border: 1px solid var(--line); border-radius: 3px;
+    padding: 12px 14px; font-family: inherit; font-size: 17px;
+    outline: none; resize: vertical; min-height: 52px;
+    text-shadow: 0 0 6px rgba(109,255,124,0.5);
+  }
+  .chat-input-row textarea:focus { border-color: var(--fg); }
+  .chat-input-row button {
+    background: var(--bg-deep); color: var(--fg-bright);
+    border: 1px solid var(--fg);
+    padding: 0 18px; font-family: inherit; font-size: 14px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    cursor: pointer;
+    text-shadow: 0 0 8px rgba(109,255,124,0.7);
+  }
+  .chat-input-row button:hover { background: var(--fg); color: var(--bg-deep); }
+  .chat-input-row button[disabled] { opacity: 0.5; cursor: not-allowed;
+    border-color: var(--fg-dim); color: var(--fg-dim); }
+  .chat-input-row button.with-img { border-color: #a3e1ff; color: #a3e1ff;
+    text-shadow: 0 0 8px rgba(163,225,255,0.6); }
+  .chat-input-row button.with-img:hover { background: #a3e1ff; color: var(--bg-deep); }
 
   /* Radio column */
   .log {
@@ -243,7 +304,7 @@
   </section>
 
   <section class="panel">
-    <h2>Operator chatter · incoming queries<span class="blink"></span></h2>
+    <h2>Lora · short replies (150-byte cap)<span class="blink"></span></h2>
     <div id="log" class="log"></div>
     <div class="composer">
       <input id="msg" type="text"
@@ -258,6 +319,23 @@
       <span class="preset">hypothermia signs?</span>
       <span class="preset">SOS pattern dimensions</span>
       <span class="preset">starting fire wet wood</span>
+    </p>
+  </section>
+
+  <section class="panel full">
+    <h2>Talk to LastBox · full chat (no byte cap, optional vision)</h2>
+    <div id="chatlog" class="chat-log"></div>
+    <div class="chat-input-row">
+      <textarea id="chatmsg" rows="2"
+        placeholder="Ask anything. Multi-sentence answers allowed. Try a longer survival scenario, or ask about what the camera sees."></textarea>
+      <button id="chatsend">ASK</button>
+      <button id="chatsendimg" class="with-img" title="capture a frame from the camera and ask about it">📷 ASK + FRAME</button>
+    </div>
+    <p class="hint">
+      Try:
+      <span class="preset" data-target="chat">Walk me through the first 10 minutes after we find someone unconscious in the cold.</span>
+      <span class="preset" data-target="chat">Compare iodine vs boiling vs UV for water purification above 3000 m.</span>
+      <span class="preset" data-target="chat">Make a 24-hour shelter plan for a coniferous forest with light rain and a 5°C night.</span>
     </p>
   </section>
 
@@ -377,7 +455,106 @@ snapBtn.addEventListener("click", doSnap);
 vprompt.addEventListener("keydown", (e) => { if (e.key === "Enter") doSnap(); });
 
 document.querySelectorAll(".preset").forEach(el => {
-  el.addEventListener("click", () => { msgEl.value = el.textContent; transmit(); });
+  el.addEventListener("click", () => {
+    if (el.dataset.target === "chat") {
+      chatMsgEl.value = el.textContent;
+      chatTransmit(false);
+    } else {
+      msgEl.value = el.textContent; transmit();
+    }
+  });
+});
+
+// ─── Big chat panel ─────────────────────────────────────────────
+const chatlog = $("chatlog"), chatMsgEl = $("chatmsg"),
+  chatSendBtn = $("chatsend"), chatSendImgBtn = $("chatsendimg");
+
+function chatRow({role, text, meta, err, img}) {
+  const row = document.createElement("div");
+  row.className = "row";
+  const r = document.createElement("div");
+  r.className = "role " + (role === "user" ? "user" : "lastbox");
+  r.textContent = role === "user" ? "// OPERATOR" : "// LASTBOX";
+  // "+ live frame" tag if img is requested (truthy or empty-string placeholder)
+  if (img !== undefined && img !== null && role === "user") {
+    const v = document.createElement("span");
+    v.className = "vision-tag"; v.textContent = "+ live frame";
+    r.appendChild(v);
+  }
+  row.appendChild(r);
+  const t = document.createElement("div");
+  t.className = "text " + (err ? "err" : "");
+  t.textContent = text;
+  row.appendChild(t);
+  // Only append <img> if we have a real src
+  if (img) {
+    const im = document.createElement("img");
+    im.className = "thumb"; im.src = img;
+    row.appendChild(im);
+  }
+  if (meta) {
+    const me = document.createElement("div");
+    me.className = "meta"; me.textContent = meta;
+    row.appendChild(me);
+  }
+  chatlog.appendChild(row);
+  chatlog.scrollTop = chatlog.scrollHeight;
+}
+
+chatRow({role: "lastbox", text: "Hi. Ask me anything survival-related. I can also look through the camera — use 📷 ASK + FRAME."});
+
+async function chatTransmit(withImage) {
+  const text = chatMsgEl.value.trim();
+  if (!text) return;
+  chatRow({role: "user", text: text, img: withImage ? "" : null});
+  // remember the just-added user row so we can patch its thumbnail in
+  const rows = chatlog.querySelectorAll(".row");
+  const userRow = rows[rows.length - 1];
+  chatMsgEl.value = "";
+  chatSendBtn.disabled = true;
+  chatSendImgBtn.disabled = true;
+  try {
+    const r = await fetch("/chat", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({message: text, include_image: withImage}),
+    });
+    const j = await r.json();
+    if (!r.ok) {
+      chatRow({role: "lastbox", text: j.error || ("HTTP " + r.status), err: true});
+    } else {
+      if (withImage && j.snapshot) {
+        // user row already has a placeholder img — fill the src
+        let imgEl = userRow.querySelector("img.thumb");
+        if (!imgEl) {
+          imgEl = document.createElement("img");
+          imgEl.className = "thumb";
+          userRow.appendChild(imgEl);
+        }
+        imgEl.src = j.snapshot;
+      }
+      chatRow({
+        role: "lastbox",
+        text: j.answer,
+        meta: `${j.bytes} bytes · gemma ${j.latency_ms} ms${j.with_image ? " · vision" : ""}`,
+      });
+    }
+  } catch (e) {
+    chatRow({role: "lastbox", text: "Network error: " + e, err: true});
+  } finally {
+    chatSendBtn.disabled = false;
+    chatSendImgBtn.disabled = false;
+    chatMsgEl.focus();
+  }
+}
+
+chatSendBtn.addEventListener("click", () => chatTransmit(false));
+chatSendImgBtn.addEventListener("click", () => chatTransmit(true));
+chatMsgEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    chatTransmit(e.metaKey || e.ctrlKey);
+  }
 });
 
 async function refresh() {

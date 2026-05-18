@@ -58,9 +58,13 @@ RPICAM_STILL_CMD = [
 
 SYSTEM_PROMPT = (
     "You are LastBox, an offline survival assistant running on a Raspberry Pi 5. "
-    "Describe what you see in the image in 1-2 short sentences. "
-    "If you see a plant, terrain, wound, or hazard relevant to survival, mention it. "
-    "Be direct and useful. Reply in English."
+    "You are given an image captured by the device camera together with a "
+    "user question. ANSWER THE QUESTION, grounding your answer in what is "
+    "visible. If the user just asks 'what is this?' or similar, describe the "
+    "scene briefly. If the user asks something practical (can I use this for "
+    "X, is this safe to eat, what is wrong with this wound), give a direct "
+    "useful answer that takes the visible object into account. Be specific, "
+    "honest about uncertainty, and reply in English."
 )
 
 
@@ -167,7 +171,7 @@ def ask_gemma(jpeg_bytes: bytes, prompt: str | None = None) -> tuple[str, int]:
                 ],
             },
         ],
-        "max_tokens": 160,
+        "max_tokens": 300,
         "temperature": 0.6,
         "stream": False,
     }
@@ -178,7 +182,7 @@ def ask_gemma(jpeg_bytes: bytes, prompt: str | None = None) -> tuple[str, int]:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=90) as resp:
+    with urllib.request.urlopen(req, timeout=180) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     latency_ms = int((time.time() - t0) * 1000)
     msg = data["choices"][0]["message"]["content"].strip()
@@ -241,7 +245,88 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_snap()
         if self.path == "/radio-query":
             return self._handle_radio_query()
+        if self.path == "/chat":
+            return self._handle_chat()
         self.send_error(404)
+
+    def _handle_chat(self) -> None:
+        """Free-form chat — no byte cap, longer answers, optional vision.
+
+        Distinct from /radio-query (terse, 150-byte LoRa cap) and /snap
+        (always grabs a frame). This is the "talk to your survival assistant
+        like a real assistant" path: longer max_tokens, no cap, vision frame
+        is *optional* via include_image.
+        """
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length) if length else b"{}"
+        try:
+            req = json.loads(body or b"{}")
+        except json.JSONDecodeError:
+            req = {}
+        msg = (req.get("message") or "").strip()
+        include_image = bool(req.get("include_image"))
+        if not msg:
+            return self._send_json(400, {"error": "message required"})
+
+        sys_prompt = (
+            "You are LastBox, an offline survival assistant running on a "
+            "Raspberry Pi 5. Answer the user's question clearly and "
+            "thoroughly. When the answer is procedural, give a numbered "
+            "list. When the user has attached an image, ground your answer "
+            "in what's visible. Be specific, actionable, and honest about "
+            "uncertainty. Reply in English."
+        )
+
+        user_content: object
+        snapshot_b64 = None
+        if include_image:
+            jpeg = grab_still()
+            if not jpeg:
+                return self._send_json(503, {"error": "camera unavailable"})
+            snapshot_b64 = base64.b64encode(jpeg).decode("ascii")
+            user_content = [
+                {"type": "text", "text": msg},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{snapshot_b64}"},
+                },
+            ]
+        else:
+            user_content = msg
+
+        payload = {
+            "model": "v3-q4_k_m.gguf",
+            "messages": [
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            "max_tokens": 400,
+            "temperature": 0.6,
+            "stream": False,
+        }
+        t0 = time.time()
+        try:
+            req_http = urllib.request.Request(
+                LLAMA_URL,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req_http, timeout=180) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            return self._send_json(502, {"error": f"gemma call failed: {e}"})
+        latency_ms = int((time.time() - t0) * 1000)
+        answer = data["choices"][0]["message"]["content"].strip()
+        result = {
+            "answer": answer,
+            "bytes": len(answer.encode("utf-8")),
+            "latency_ms": latency_ms,
+            "with_image": include_image,
+        }
+        if snapshot_b64:
+            result["snapshot"] = f"data:image/jpeg;base64,{snapshot_b64}"
+        return self._send_json(200, result)
 
     def _handle_radio_query(self) -> None:
         """Field a survival query as if it came over LoRa.
