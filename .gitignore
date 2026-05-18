@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Claude / agent state
+.claude/
+.claude-*/
+CLAUDE.md
+
+# Unsloth runtime caches
+unsloth_compiled_cache/
+
+# Logs
+*.log
+*.pid
+gemma4/logs/
+**/wandb/
+
+# Heavy model artefacts — keep LoRA adapter only.
+# Full-merged safetensors are too large for git; the LoRA adapter in
+# out/lastbox-gemma4-e2b-sft-v3-nothink/lora/ is enough to reproduce the
+# merge + GGUF export (see SUBMISSION.md "Reproducing").
+out/lastbox-qwen3*/
+out/lastbox-gemma4-e2b-grpo/
+out/lastbox-gemma4-e2b-sft/
+out/lastbox-gemma4-e2b-sft-v2/
+out/lastbox-gemma4-e2b-sft-v3-nothink/checkpoints/
+out/lastbox-gemma4-e2b-sft-v3-nothink/model.safetensors
+out/lastbox-gemma4-e2b-sft-v3-nothink/*.gguf
+# Parent-level checkpoint files are redundant with lora/ subdir
+out/lastbox-gemma4-e2b-sft-v3-nothink/tokenizer*.json
+out/lastbox-gemma4-e2b-sft-v3-nothink/processor_config.json
+out/lastbox-gemma4-e2b-sft-v3-nothink/chat_template.jinja
+out/lastbox-gemma4-e2b-sft-v3-nothink/config.json
+out/lastbox-gemma4-e2b-sft-v3-nothink/meta.json
+
+# Deployment bundle weights — too big for git, hosted as release artefacts.
+gemma4/deploy/bundle/models/*.gguf
+
+# Stray top-level outputs from older runs
+/export_gguf.log
+/gen2.log
+/train.log
+/train_v2.log
+/train_grpo.log
+
+# Legacy PL Qwen3 v1 (April 2026, pre-hackathon) — kept locally for history
+# but not part of the public Gemma 4 hackathon submission.
+/data/
+/src/
+/training/
+/lastbox_soul.toml

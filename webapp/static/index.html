@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LastBox — what do I see?</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --fg: #e8eef2;
+    --accent: #5cd6a8;
+    --dim: #8a99a6;
+    --panel: #14181d;
+    --warn: #f0b341;
+    --err: #ff5c5c;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    padding: 14px 22px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #1f262d;
+  }
+  header h1 {
+    font-size: 16px; font-weight: 600; margin: 0;
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  header .status {
+    font-size: 12px; color: var(--dim);
+    display: flex; gap: 14px; align-items: center;
+  }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); margin-right: 6px; vertical-align: middle; }
+  .dot.ok { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .dot.bad { background: var(--err); }
+  main {
+    max-width: 1100px; margin: 0 auto; padding: 22px;
+    display: grid; grid-template-columns: 1fr; gap: 22px;
+  }
+  @media (min-width: 880px) {
+    main { grid-template-columns: 1.4fr 1fr; }
+  }
+  .frame {
+    position: relative;
+    background: #000; border-radius: 14px; overflow: hidden;
+    aspect-ratio: 4 / 3;
+    border: 1px solid #1f262d;
+  }
+  .frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .frame .live {
+    position: absolute; top: 12px; left: 12px;
+    background: rgba(255,80,80,0.85); color: white;
+    font-size: 11px; padding: 4px 8px; border-radius: 6px;
+    letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600;
+  }
+  .frame .live::before {
+    content: ""; display: inline-block; width: 8px; height: 8px;
+    background: white; border-radius: 50%; margin-right: 6px;
+    animation: blink 1.2s infinite;
+  }
+  @keyframes blink { 50% { opacity: 0.2; } }
+  .panel {
+    background: var(--panel); border: 1px solid #1f262d;
+    border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .prompt {
+    background: #0b0d10; border: 1px solid #1f262d;
+    color: var(--fg); padding: 10px 12px; border-radius: 8px;
+    font-size: 14px; font-family: inherit; outline: none;
+  }
+  .prompt:focus { border-color: var(--accent); }
+  button.snap {
+    background: var(--accent); color: #062019; border: 0;
+    padding: 14px 18px; border-radius: 10px; font-size: 15px; font-weight: 700;
+    cursor: pointer; letter-spacing: 0.02em;
+    transition: transform 0.05s ease, opacity 0.15s ease;
+  }
+  button.snap:hover { transform: translateY(-1px); }
+  button.snap:active { transform: translateY(0); }
+  button.snap[disabled] { opacity: 0.5; cursor: not-allowed; }
+  .answer {
+    background: #0b0d10; border: 1px solid #1f262d;
+    border-radius: 10px; padding: 14px; min-height: 80px;
+    font-size: 15px; line-height: 1.5; white-space: pre-wrap;
+  }
+  .answer.empty { color: var(--dim); font-style: italic; }
+  .meta { font-size: 12px; color: var(--dim); display: flex; gap: 14px; }
+  .snapshot {
+    border-radius: 8px; max-width: 100%; max-height: 180px; align-self: flex-start;
+    border: 1px solid #1f262d; display: none;
+  }
+  .snapshot.show { display: block; }
+  footer {
+    padding: 14px 22px; font-size: 11px; color: var(--dim);
+    border-top: 1px solid #1f262d; text-align: center;
+  }
+  footer a { color: var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <h1>LastBox · live</h1>
+  <div class="status">
+    <span><span class="dot" id="dot-cam"></span>camera</span>
+    <span><span class="dot" id="dot-llm"></span>gemma</span>
+  </div>
+</header>
+
+<main>
+  <div class="frame">
+    <img id="stream" src="/stream" alt="live camera">
+    <div class="live">live</div>
+  </div>
+
+  <section class="panel">
+    <label style="font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:0.05em;">
+      Ask Gemma about the scene
+    </label>
+    <input class="prompt" id="prompt" type="text" placeholder="(optional) e.g. is this plant safe to eat?" autocomplete="off">
+    <button class="snap" id="snap">📸 Capture &amp; ask</button>
+    <img class="snapshot" id="snapshot" alt="snapshot">
+    <div class="answer empty" id="answer">No question yet. Press Capture &amp; ask.</div>
+    <div class="meta" id="meta"></div>
+  </section>
+</main>
+
+<footer>
+  Gemma 4 E2B fine-tuned · Q4_K_M on RPi5 8GB CPU · llama.cpp · stream from rpicam-vid
+</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const btn = $("snap"), promptEl = $("prompt"), ans = $("answer"), meta = $("meta"), snap = $("snapshot");
+const dotCam = $("dot-cam"), dotLlm = $("dot-llm");
+
+async function refreshHealth() {
+  try {
+    const r = await fetch("/health");
+    const j = await r.json();
+    dotCam.className = "dot " + (j.camera ? "ok" : "bad");
+    dotLlm.className = "dot " + (j.llama ? "ok" : "bad");
+  } catch (e) {
+    dotCam.className = dotLlm.className = "dot bad";
+  }
+}
+setInterval(refreshHealth, 4000);
+refreshHealth();
+
+async function doSnap() {
+  btn.disabled = true;
+  const t0 = performance.now();
+  ans.classList.remove("empty");
+  ans.textContent = "Thinking…";
+  meta.textContent = "";
+  try {
+    const r = await fetch("/snap", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({prompt: promptEl.value || null}),
+    });
+    const j = await r.json();
+    if (!r.ok) {
+      ans.textContent = "Error: " + (j.error || r.status);
+    } else {
+      ans.textContent = j.answer;
+      const total = Math.round(performance.now() - t0);
+      meta.textContent = `Gemma latency ${j.latency_ms} ms · round-trip ${total} ms`;
+      if (j.snapshot) { snap.src = j.snapshot; snap.classList.add("show"); }
+    }
+  } catch (e) {
+    ans.textContent = "Network error: " + e;
+  } finally {
+    btn.disabled = false;
+  }
+}
+btn.addEventListener("click", doSnap);
+promptEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doSnap(); });
+</script>
+</body>
+</html>

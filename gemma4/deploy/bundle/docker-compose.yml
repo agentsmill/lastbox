@@ -1,0 +1,65 @@
+services:
+  llama-server:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: lastbox-gemma4-llama
+    restart: unless-stopped
+    ports:
+      - "11436:8080"
+    volumes:
+      - /mnt/nvme/lastbox-gemma4/models:/models:ro
+    command: >
+      -m /models/lastbox-gemma4-e2b-q4_k_m.gguf
+      --mmproj /models/mmproj-F16.gguf
+      --host 0.0.0.0
+      --port 8080
+      --ctx-size 2048
+      --threads 4
+      --parallel 1
+      --batch-size 256
+      --ubatch-size 256
+      --n-predict 256
+      --temp 0.3
+      --top-p 0.9
+      --top-k 40
+      --repeat-penalty 1.05
+      --jinja
+      --chat-template-file /models/chat_template.jinja
+      --no-mmap
+      --mlock
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+        reservations:
+          memory: 4G
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  tools-server:
+    image: python:3.11-slim
+    container_name: lastbox-gemma4-tools
+    restart: unless-stopped
+    ports:
+      - "8088:8080"
+    volumes:
+      - /mnt/nvme/lastbox-gemma4/tools:/app:ro
+      - /mnt/nvme/lastbox-gemma4/data:/data
+    working_dir: /app
+    environment:
+      LLM_URL: "http://llama-server:8080"
+    command: >
+      sh -c "pip install --no-cache-dir fastapi uvicorn httpx && python -m uvicorn server:app --host 0.0.0.0 --port 8080"
+    depends_on:
+      - llama-server
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+networks:
+  default:
+    name: lastbox-gemma4
