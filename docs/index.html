@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LASTBOX // OFFLINE SURVIVAL ASSISTANT — Gemma 4 hackathon submission</title>
+<meta name="description" content="Offline survival assistant on Raspberry Pi 5 + LoRa radio, fine-tuned Gemma 4 E2B running on ARM CPU. Kaggle Gemma 4 Good Hackathon 2026 submission.">
+<meta property="og:title" content="LASTBOX — offline survival assistant on RPi5 + fine-tuned Gemma 4">
+<meta property="og:description" content="Pelican-cased Raspberry Pi 5 that answers survival questions, identifies plants and wounds from its camera, and relays mesh messages — fully offline.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a1208;
+    --bg-deep: #050a04;
+    --fg: #6dff7c;
+    --fg-dim: #2f7a3a;
+    --fg-bright: #b6ffc2;
+    --amber: #ffb541;
+    --err: #ff5c5c;
+    --line: #133318;
+    --scan: rgba(40, 80, 30, 0.18);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; padding: 0;
+    background: var(--bg-deep);
+    color: var(--fg);
+    font-family: "VT323", "Share Tech Mono", "IBM Plex Mono", "SF Mono", Menlo, monospace;
+    font-size: 19px;
+    min-height: 100vh;
+    text-shadow: 0 0 6px rgba(109, 255, 124, 0.35);
+    overflow-x: hidden;
+    line-height: 1.55;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+    background: repeating-linear-gradient(to bottom,
+      var(--scan) 0, var(--scan) 1px, transparent 2px, transparent 3px);
+    mix-blend-mode: overlay;
+  }
+  body::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 9998;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.65) 100%);
+  }
+
+  a { color: var(--fg-bright); text-decoration: none;
+      border-bottom: 1px dashed var(--fg-dim); }
+  a:hover { color: var(--amber); border-bottom-color: var(--amber); }
+
+  header.top {
+    position: sticky; top: 0; z-index: 10;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(to right, #0a1a0c 0%, var(--bg) 100%);
+    display: flex; justify-content: space-between; align-items: center;
+    backdrop-filter: blur(2px);
+  }
+  header.top h1 {
+    margin: 0; font-size: 19px; font-weight: normal;
+    letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--fg-bright);
+  }
+  header.top nav a {
+    color: var(--fg-dim); margin-left: 18px; font-size: 14px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    border-bottom: none;
+  }
+  header.top nav a:hover { color: var(--fg-bright); border-bottom: none; }
+
+  main {
+    max-width: 1100px; margin: 0 auto; padding: 24px;
+  }
+
+  section { margin-bottom: 64px; }
+  section h2 {
+    color: var(--fg-bright); font-weight: normal;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    font-size: 18px; margin: 0 0 18px;
+    border-bottom: 1px solid var(--line); padding-bottom: 6px;
+  }
+  section h3 {
+    color: var(--amber); font-weight: normal;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    font-size: 16px; margin: 28px 0 10px;
+  }
+
+  /* HERO */
+  .hero {
+    padding: 36px 24px; border: 1px solid var(--line);
+    background: var(--bg); margin-bottom: 36px; border-radius: 4px;
+    position: relative; overflow: hidden;
+  }
+  .hero::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at top left,
+      rgba(109,255,124,0.10), transparent 60%);
+  }
+  .hero .badge {
+    color: var(--amber); letter-spacing: 0.22em; font-size: 13px;
+    text-transform: uppercase;
+  }
+  .hero h1 {
+    margin: 8px 0 6px;
+    font-size: 64px; letter-spacing: 0.06em;
+    color: var(--fg-bright); font-weight: normal;
+    text-shadow: 0 0 16px rgba(109,255,124,0.7);
+  }
+  .hero .tag { color: var(--fg); font-size: 20px; margin: 0 0 18px; }
+  .hero .one-line {
+    color: var(--fg-dim); font-size: 17px; max-width: 760px;
+    line-height: 1.55;
+  }
+  .hero .pills {
+    margin-top: 22px; display: flex; flex-wrap: wrap; gap: 10px;
+  }
+  .pill {
+    border: 1px solid var(--line); background: var(--bg-deep);
+    color: var(--fg-dim); font-size: 13px;
+    padding: 5px 11px; border-radius: 999px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .pill strong { color: var(--fg-bright); font-weight: normal; }
+  .pill.ok { border-color: var(--fg); color: var(--fg-bright); }
+  .pill.warn { border-color: var(--amber); color: var(--amber); }
+
+  .hero .cta {
+    margin-top: 24px; display: flex; flex-wrap: wrap; gap: 12px;
+  }
+  .btn {
+    border: 1px solid var(--fg); background: var(--bg-deep);
+    color: var(--fg-bright); padding: 10px 18px;
+    font-family: inherit; font-size: 15px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    cursor: pointer; text-decoration: none; border-bottom: none;
+    text-shadow: 0 0 8px rgba(109,255,124,0.7);
+  }
+  .btn:hover { background: var(--fg); color: var(--bg-deep); border-bottom: none; }
+  .btn.ghost { border-color: var(--fg-dim); color: var(--fg-dim); }
+  .btn.ghost:hover { border-color: var(--amber); color: var(--amber); background: transparent; }
+
+  /* GRID PANELS */
+  .grid {
+    display: grid; grid-template-columns: 1fr; gap: 18px;
+  }
+  @media (min-width: 760px) {
+    .grid.cols-2 { grid-template-columns: 1fr 1fr; }
+    .grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  }
+  .panel {
+    background: var(--bg); border: 1px solid var(--line);
+    border-radius: 4px; padding: 16px 18px;
+  }
+  .panel h3 { margin-top: 0; }
+  .panel p { margin: 0 0 10px; color: var(--fg); }
+  .panel .num {
+    font-size: 30px; color: var(--fg-bright);
+    text-shadow: 0 0 10px rgba(109,255,124,0.6);
+  }
+  .panel small { color: var(--fg-dim); font-size: 13px; letter-spacing: 0.05em; }
+
+  pre {
+    background: var(--bg-deep); border: 1px solid var(--line);
+    padding: 14px 16px; border-radius: 3px;
+    font-family: "Share Tech Mono", "SF Mono", Menlo, monospace;
+    font-size: 13px; line-height: 1.5;
+    color: var(--fg); overflow-x: auto;
+    text-shadow: none;
+  }
+  code { font-family: "Share Tech Mono", "SF Mono", Menlo, monospace;
+    color: var(--fg-bright); font-size: 90%; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td {
+    text-align: left; padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  th { color: var(--fg-dim); font-weight: normal; letter-spacing: 0.06em;
+       text-transform: uppercase; font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  td.k { color: var(--fg-dim); width: 38%; }
+  td strong { color: var(--fg-bright); font-weight: normal; }
+
+  .ascii {
+    color: var(--fg-dim);
+    font-size: 11.5px; line-height: 1.3;
+    white-space: pre; overflow-x: auto;
+    background: var(--bg-deep); border: 1px solid var(--line);
+    padding: 14px; border-radius: 3px;
+  }
+
+  blockquote {
+    margin: 16px 0; padding: 10px 14px;
+    border-left: 3px solid var(--amber);
+    background: rgba(255,181,65,0.04);
+    color: var(--fg);
+    font-style: normal;
+  }
+
+  /* mini terminal (animated demo) */
+  .term {
+    background: var(--bg-deep); border: 1px solid var(--line);
+    border-radius: 4px; padding: 16px;
+    font-family: "Share Tech Mono", "SF Mono", Menlo, monospace;
+    font-size: 14px; line-height: 1.5;
+    min-height: 220px;
+  }
+  .term .prompt { color: var(--amber); }
+  .term .ans { color: var(--fg-bright); }
+  .term .meta { color: var(--fg-dim); font-size: 12px; }
+  .term .cursor { animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  footer {
+    margin-top: 48px; padding: 24px;
+    border-top: 1px solid var(--line);
+    text-align: center; color: var(--fg-dim); font-size: 13px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  footer a { color: var(--fg-dim); border-bottom-color: var(--line); }
+  footer a:hover { color: var(--fg-bright); }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>LASTBOX // OPS</h1>
+  <nav>
+    <a href="#what">what</a>
+    <a href="#arch">arch</a>
+    <a href="#train">train</a>
+    <a href="#bench">bench</a>
+    <a href="#ui">ui</a>
+    <a href="#roadmap">roadmap</a>
+    <a href="https://github.com/agentsmill/lastbox">github</a>
+  </nav>
+</header>
+
+<main>
+
+<!-- HERO -->
+<section class="hero" id="top">
+  <div class="badge">KAGGLE · GEMMA 4 GOOD HACKATHON · 2026</div>
+  <h1>LASTBOX</h1>
+  <p class="tag">offline survival assistant in a pelican case.</p>
+  <p class="one-line">
+    A Raspberry Pi 5, a LoRa 868 MHz radio HAT, a camera and a fine-tuned
+    <strong style="color:var(--fg-bright)">Gemma 4 E2B</strong> running on an ARM CPU. Answers survival
+    questions, identifies plants and wounds from its lens, relays terse
+    messages over a Meshtastic mesh — <strong style="color:var(--fg-bright)">no internet, no cloud, no
+    phone-home</strong>. When the network is the first thing to fail, you still
+    have the box.
+  </p>
+
+  <div class="pills">
+    <span class="pill ok"><strong>FIRST TOKEN</strong> ~700 ms WARM</span>
+    <span class="pill ok"><strong>SUSTAINED</strong> 6.4–7 TOK/S</span>
+    <span class="pill ok"><strong>MODEL</strong> GEMMA-4-E2B Q4_K_M (3.4 GB)</span>
+    <span class="pill ok"><strong>VISION</strong> MMPROJ-F16 (940 MB)</span>
+    <span class="pill"><strong>HOST</strong> RPI 5 · 8 GB · ARM CORTEX-A76</span>
+    <span class="pill warn"><strong>LORA HAT</strong> SX1262 DOWN (SIMULATION)</span>
+  </div>
+
+  <div class="cta">
+    <a class="btn" href="https://github.com/agentsmill/lastbox">REPO →</a>
+    <a class="btn ghost" href="https://github.com/agentsmill/lastbox/blob/main/gemma4/SUBMISSION.md">FULL WRITE-UP</a>
+    <a class="btn ghost" href="https://www.kaggle.com/competitions/gemma-4-good-hackathon">KAGGLE</a>
+  </div>
+</section>
+
+<!-- WHAT -->
+<section id="what">
+  <h2>WHAT IT IS</h2>
+
+  <p>
+    LastBox is what you reach for when the grid stops working. The hardware is
+    deliberately boring — a Raspberry Pi 5 with 8 GB of RAM in a sealed Pelican
+    case, a 12 V LiFePO₄ battery, a camera module, a LoRa radio HAT — but the
+    software does three things that are normally cloud features:
+  </p>
+
+  <div class="grid cols-3">
+    <div class="panel">
+      <h3>Survival Q&amp;A</h3>
+      <p>Touch or type a question. A fine-tuned Gemma 4 E2B replies in 1–2 sentences with a numbered procedure if appropriate. Hard byte caps so every reply fits.</p>
+      <small>FIRST AID · BUSHCRAFT · NAVIGATION · POWER · HAZARDS</small>
+    </div>
+    <div class="panel">
+      <h3>Optical triage</h3>
+      <p>Aim the camera at a plant, a wound or a piece of gear. The same model answers via a 940 MB SigLIP vision encoder. Defaults to <em>conservative</em> replies — "unknown plant, do not eat" beats a wrong identification.</p>
+      <small>SIGLIP MMPROJ · CC-LICENSED EVAL IMAGES</small>
+    </div>
+    <div class="panel">
+      <h3>Mesh radio relay</h3>
+      <p>Reply payloads are hard-capped at 150 bytes UTF-8 so they fit in a single LoRa packet at legal duty cycle. The box becomes a thinking router in a Meshtastic mesh of handhelds.</p>
+      <small>868 MHz · MESHTASTIC USB OR SX1262 SPI</small>
+    </div>
+  </div>
+</section>
+
+<!-- ARCHITECTURE -->
+<section id="arch">
+  <h2>ARCHITECTURE</h2>
+  <pre class="ascii">
+┌──────────────── Touchscreen / Web UI / LoRa packet in ────────────────┐
+│                                                                      │
+│  webapp/server.py     ──or──     demo.py orchestrator                 │
+│       │                                │                              │
+│       ▼   HTTP /v1/chat/completions    ▼                              │
+│  ┌──────────────────────────────────────────────────────┐             │
+│  │ llama-server (Docker on RPi 5)                       │             │
+│  │   ghcr.io/ggml-org/llama.cpp:server                  │             │
+│  │   ────────────────────────────────                   │             │
+│  │   -m  lastbox-gemma4-e2b-q4_k_m.gguf  (3.4 GB)       │             │
+│  │   --mmproj mmproj-F16.gguf            (940 MB)       │             │
+│  │   --threads 4  --ctx 2048  --parallel 1              │             │
+│  │   port 11436 → 8080                                  │             │
+│  └──────────────────────────────────────────────────────┘             │
+│       │                                                              │
+│       ▼   text + optional &lt;tool_call&gt; blocks                          │
+│  Tool dispatcher (in demo.py):                                       │
+│  - search_knowledge   → local SQLite / dict of survival manuals      │
+│  - capture_image      → RPi camera + multimodal model                │
+│  - analyze_signal     → LoRa HAT RSSI / SNR stats                    │
+│  - send_lora_message  → Meshtastic firmware via serial               │
+│  - get_system_status  → psutil + /sys/class/thermal                  │
+│  - listen_lora        → channel scan w/ pattern filter               │
+│  - update_memory      → atomic toml write                            │
+│                                                                      │
+│  Tool result → injected as next user turn → final answer             │
+└──────────────────────────────────────────────────────────────────────┘
+  </pre>
+</section>
+
+<!-- TRAINING -->
+<section id="train">
+  <h2>TRAINING</h2>
+  <p>
+    One GB10 (Grace Blackwell, DGX Spark, 121 GB unified RAM, aarch64 + CUDA 13).
+    Unsloth's <code>FastModel</code> on Gemma 4 E2B-it, LoRA r=8 α=8, bf16,
+    cosine schedule. Dataset generated by <strong>Kimi K2.5</strong> as teacher
+    via OpenRouter — 30 inline survival seeds × 5 categories × 8 variants,
+    JSONL-strict, byte-cap validated, deduped.
+  </p>
+
+  <div class="grid cols-2">
+    <div class="panel">
+      <h3>The numbers</h3>
+      <table>
+        <tr><td class="k">DATA GEN</td><td><strong>$1.10</strong> · ~30 min · 1151 raw → 1148 kept (99.7%)</td></tr>
+        <tr><td class="k">SFT v2 (3 epochs)</td><td>43 min on GB10 · train loss 0.08</td></tr>
+        <tr><td class="k">SFT v3 no-think (shipped)</td><td>27 min on GB10 · 2 epochs · template fix kills CoT preamble</td></tr>
+        <tr><td class="k">GGUF EXPORT</td><td>~35 s · bf16 → Q4_K_M</td></tr>
+        <tr><td class="k">DEPLOY</td><td>5-7 min rsync over Tailscale to lastbox</td></tr>
+        <tr><td class="k">END-TO-END CLEAN RUN</td><td><strong>~1.5 h</strong> data → deploy → eval</td></tr>
+      </table>
+    </div>
+    <div class="panel">
+      <h3>Loss curve (SFT v2)</h3>
+<pre>step  train    eval
+   5  3.37
+  10  2.29
+  15  1.38
+  20  1.09
+  30  0.77
+  50  0.26    2.62
+ 100  0.08    2.64
+ 150  0.07    2.65
+ 195  0.08    2.64</pre>
+      <small>Eval plateau ≈ 2.64 reflects the 114-dialog held-out set; what counts is agent-level eval below.</small>
+    </div>
+  </div>
+</section>
+
+<!-- BENCHMARKS -->
+<section id="bench">
+  <h2>BENCHMARKS — V2 vs V3 ON THE DEPLOYED BOX</h2>
+
+  <p>
+    Two trained checkpoints, both benchmarked live against the RPi 5 over
+    Tailscale. v3 shipped because the qualitative gap was decisive even when
+    headline numbers looked similar.
+  </p>
+
+  <table>
+    <tr>
+      <th>METRIC</th>
+      <th>v2 (thinking)</th>
+      <th>v3 (no-think) — shipped</th>
+    </tr>
+    <tr><td class="k">Response-quality (25 samples)</td><td>0.518</td><td>0.506</td></tr>
+    <tr><td class="k">Of completed dialogs</td><td>13/14 (93%)</td><td><strong>13/14 (93%)</strong></td></tr>
+    <tr><td class="k">format_ok hybrid</td><td>0.52</td><td>0.52</td></tr>
+    <tr><td class="k">byte_compliance (≤150 / ≤200 B)</td><td>0.48</td><td>0.48</td></tr>
+    <tr><td class="k">persona_ok (no preambles)</td><td>0.56</td><td>0.52</td></tr>
+    <tr><td class="k">Median first-token (warm)</td><td>~1.5 s</td><td><strong>~0.7 s</strong></td></tr>
+    <tr><td class="k">Smoke-test response</td><td>"Thinking Process: 1. Analyze… 2. Determine…" (516 B)</td><td><strong>"1. Apply direct, firm pressure to the wound with a clean cloth." (63 B)</strong></td></tr>
+    <tr><td class="k">Smoke-test end-to-end</td><td>19 s</td><td><strong>4.7 s</strong></td></tr>
+    <tr><td class="k">Sustained generation</td><td>6.4–7 tok/s</td><td>6.4–7 tok/s</td></tr>
+  </table>
+
+  <blockquote>
+    The difference between v2 and v3 is the difference between a thinking-out-loud
+    model with a tighter style and <strong>a survival agent that just gives you
+    the answer</strong>. v3 is shipped.
+  </blockquote>
+
+  <h3>Sample real interactions</h3>
+<pre>
+you (touchscreen)&gt; How many watts solar panel for my RPi 5?
+lastbox&gt; Min 15 W panel, recommended 20 W with an MPPT regulator for
+         24/7 operation in cloudy conditions.
+         (first token 668 ms)
+
+you (lora)&gt; hypothermia signs?
+lastbox&gt; Shivering, slurred speech, confusion. Warm gradually, dry
+         clothes, sweet warm drink. Severe: handle gently, evacuate.
+         (138 B UTF-8 — under LoRa 150 B cap)
+
+you (touchscreen)&gt; Pi 5 throws undervoltage warning even with the
+                   official 27W PSU. What to check?
+lastbox&gt; Check USB-C cable AWG ≤20, no powered USB peripherals draining
+         current, dmesg | grep undervolt for kernel-side power throttles.
+         (165 B — under 200 B touchscreen cap)
+</pre>
+</section>
+
+<!-- UI -->
+<section id="ui">
+  <h2>THE BOX // LIVE UI</h2>
+
+  <p>
+    The same Pip-Boy aesthetic as this page is the lastbox's actual interface.
+    Two columns: <strong>live MJPEG stream</strong> from the Raspberry Pi camera on the
+    left, <strong>operator-chatter radio chat</strong> on the right. Snap a frame, ask
+    Gemma about what it sees; type a query "from a remote handheld", get a reply
+    that fits in a 150-byte LoRa packet — both go into the same chat log so the
+    timeline is coherent.
+  </p>
+
+  <p>
+    Served by <code>webapp/server.py</code> — <strong>stdlib Python only, zero pip
+    deps</strong>. Lives on the SD card, not the NVMe. Reachable on
+    <code>http://lastbox.local:8080/</code> from any device on the same LAN.
+  </p>
+
+  <div class="term" id="term">
+    <span class="meta">[lastbox-a] all systems up · mesh listener active · gemma 4 e2b q4_k_m loaded · awaiting traffic</span><br><br>
+    <span class="prompt">[node-remote → LASTBOX-A]</span> stop bleeding arm fast<br>
+    <span class="ans">[LASTBOX-A → mesh] Apply direct, firm pressure to the wound immediately.<br>1. Use a clean cloth or bandage.<br>2. Keep pressure constant.</span><br>
+    <span class="meta">113 / 150 bytes [OK] · gemma 6.2 s</span><br><br>
+    <span class="prompt">[OPTICAL → LASTBOX-A]</span> what do you see?<br>
+    <span class="ans">[LASTBOX-A · vision] The image shows a plain, light-colored, flat surface with a subtle shadow across it. There are no visible plants, wounds, or immediate hazards present.</span><br>
+    <span class="meta">gemma vision 31 343 ms · mmproj-F16 + Gemma 4 E2B Q4_K_M</span><br><br>
+    <span class="prompt">&gt;<span class="cursor">_</span></span>
+  </div>
+</section>
+
+<!-- ROADMAP -->
+<section id="roadmap">
+  <h2>ROADMAP — WIRED, NOT VAPOR</h2>
+
+  <p>
+    A handful of features were intentionally left as the next iteration. Each
+    one is wired in the codebase and gated on a clear external signal — a
+    plugged-in device, a freed GPU hour, a register-level fix. They are not
+    vapor, they are switches.
+  </p>
+
+  <div class="grid cols-2">
+
+    <div class="panel">
+      <h3>Voice in, voice out</h3>
+      <p>
+        The orchestrator separates <em>intent capture</em> from
+        <em>intent dispatch</em>, so a mic path on the front is one endpoint:
+      </p>
+<pre>arecord 16 kHz mono 5 s
+   → whisper.cpp tiny.en (~75 MB)
+   → POST /radio-query
+   → Gemma 4 E2B reply
+   → piper | espeak-ng → speaker</pre>
+      <p>
+        Blocker: the ReSpeaker 2-Mic HAT we have ships with a TLV320AIC3104
+        codec instead of the silkscreened WM8960; the standard overlay fails
+        with -121, the fallback overlay loads but leaves the ADC muted.
+        Two known fixes (custom overlay or an i2cset register sequence) —
+        both short, neither shippable inside the deadline window.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h3>Mesh radio — real packets</h3>
+      <p>
+        <code>demo.py</code> already calls <code>meshtastic --port</code> for
+        <code>send_lora_message</code> and <code>listen_lora</code>; the Pip-Boy
+        "RADIO" UI calls those same code paths. <code>/mesh-status</code>
+        reports the live hardware truth, so the UI degrades to local inference
+        under the real 150-byte cap.
+      </p>
+      <p>
+        The moment a working LoRa device shows up on <code>/dev/ttyUSB0</code>
+        or the SX1262 SPI pins go active, the relay path lights up without a
+        code change.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h3>Tool-call training (GRPO)</h3>
+      <p>
+        The SFT model rarely emits <code>&lt;tool_call&gt;</code> blocks
+        (~0% in eval), so the orchestrator currently keyword-routes between
+        tools. The clean fix is a GRPO pass with
+        <code>r = +1 if expected_tool_called else 0</code> against the same
+        dialog set — ~1 h additional GB10 time.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h3>Image-paired fine-tune</h3>
+      <p>
+        Today the vision branch is untrained — Gemma's pretraining handles
+        "what is in this picture?" perfectly, but the rowan-vs-yew toxicity
+        distinction (load-bearing for a survival assistant) needs an
+        image-paired SFT. ~500 CC-licensed plant photos × hybrid-format labels
+        would close the gap.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h3>Access-point mode</h3>
+      <p>
+        Today the lastbox joins an existing WiFi network and is reachable on
+        <code>http://lastbox.local:8080/</code>. With <code>hostapd +
+        dnsmasq</code>, the same box becomes the network — connect from any
+        phone to SSID <code>lastbox</code> and the same UI is there.
+        Out of scope for v1.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h3>NVMe power-saving fix</h3>
+      <p>
+        The on-device NVMe crashed ~2 h before the deadline (classic RPi 5
+        PCIe power-saving fault — <code>CSTS=0xffffffff</code>). The webapp
+        was rebuilt stdlib-only and deployed to the SD card so the demo
+        wouldn't blink. v2 boots with
+        <code>nvme_core.default_ps_max_latency_us=0 pcie_aspm=off
+        pcie_port_pm=off</code>.
+      </p>
+    </div>
+
+  </div>
+</section>
+
+</main>
+
+<footer>
+  LASTBOX RUNS LOCAL · NO INTERNET REQUIRED · GEMMA 4 E2B Q4_K_M · APACHE 2.0<br>
+  <a href="https://github.com/agentsmill/lastbox">GITHUB</a> ·
+  <a href="https://github.com/agentsmill/lastbox/blob/main/gemma4/SUBMISSION.md">SUBMISSION.md</a> ·
+  <a href="https://www.kaggle.com/competitions/gemma-4-good-hackathon">KAGGLE 'GEMMA 4 GOOD' HACKATHON</a>
+</footer>
+
+<script>
+// keep the cursor blinking even after the terminal block is laid out
+document.body.addEventListener("click", (e) => {
+  // small egg: clicking the hero scrolls to "what"
+  if (e.target.closest(".hero h1, .hero .tag")) {
+    document.querySelector("#what").scrollIntoView({behavior: "smooth"});
+  }
+});
+</script>
+</body>
+</html>

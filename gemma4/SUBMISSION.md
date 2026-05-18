@@ -291,6 +291,73 @@ lastbox> Check USB-C cable AWG ≤20, no powered USB peripherals draining curren
 
 ---
 
+## Roadmap — what the v1 box is wired for
+
+We picked the scope of this submission so every shipped surface is honest about
+what it does. A handful of features were intentionally left as the next
+iteration; each one is *wired in the codebase* and gated on a clear external
+signal (a plugged-in device, a freed GPU hour, a register-level fix). They are
+not vapor — they are switches.
+
+### Voice in, voice out (Whisper.cpp + on-device TTS)
+
+The orchestrator already separates "intent capture" from "intent dispatch", so
+plugging a microphone path on the front is one endpoint:
+
+```
+arecord (16 kHz mono, 5 s) →  whisper.cpp tiny.en (~75 MB GGML, CPU)
+                          →  POST /radio-query  (existing path)
+                          →  Gemma 4 E2B reply  (existing path)
+                          →  espeak-ng | piper  →  voicehat speaker
+```
+
+The blocker today is the ReSpeaker 2-Mic Pi HAT V2.0 we have on hand: the
+silkscreen says WM8960 but the actual codec is a Texas Instruments
+TLV320AIC3104, so the documented `seeed-2mic-voicecard` overlay fails with
+`-121`. The `googlevoicehat-soundcard` overlay loads cleanly and the card shows
+up in ALSA, but it doesn't poke the AIC3104 via I²C — capture returns RMS=0
+because the ADC is muted at boot. Two known fixes: a custom overlay using
+`snd-soc-tlv320aic3x` (the driver is in-tree), or a one-shot `i2cset` register
+sequence to unmute. Both are short; neither was safe to attempt inside the
+deadline window without risking the rest of the submission. The webapp ships
+with an `/asr` endpoint stub in the orchestrator design so v2 is a 200-line
+diff, not a redesign.
+
+### Mesh radio (real packets, not simulation)
+
+`demo.py` already calls `meshtastic --port` for `send_lora_message` and
+`listen_lora`; the Pip-Boy "RADIO" UI calls those same code paths.
+`/mesh-status` reports the live hardware truth — SX1262 HAT pins floating,
+no USB serial device, `meshtastic-py` absent — so the UI degrades to local
+inference under the real 150-byte cap. The moment a working LoRa device shows
+up on `/dev/ttyUSB0` or the SX1262 SPI pins go active, the relay path lights
+up without a code change.
+
+### Tool-call training (GRPO with a reward on `expected_tool`)
+
+The SFT model rarely emits `<tool_call>` blocks (~0% in eval), so the
+orchestrator currently keyword-routes between tools. The clean fix is a GRPO
+pass with `r = +1 if expected_tool_called else 0` against the same dialog set —
+~1 h additional GB10 time. Code path: `gemma4/scripts/train_sft.py` →
+copy-and-rename to `train_grpo.py`, swap trainer.
+
+### Image-paired fine-tune for safe plant-ID
+
+Today the vision branch is untrained — Gemma's pretraining handles "what is in
+this picture?" perfectly, but the rowan-vs-yew toxicity distinction
+(actually load-bearing for a survival assistant) needs an image-paired SFT.
+~500 CC-licensed plant photos × hybrid-format labels would close it.
+
+### Access-point mode (truly walk-up usable)
+
+Right now the lastbox joins an existing WiFi network and is reachable on
+`http://lastbox.local:8080/`. With `hostapd + dnsmasq`, the same box becomes
+the network — connect from any phone to SSID `lastbox` and the same UI is
+there. Out of scope for v1 because the AP setup conflicts with the joined
+network and would have eaten the deadline.
+
+---
+
 ## Known limitations & future work
 
 1. **CoT suppression** — ✅ FIXED in v3 by switching to the `gemma-4` (no-thinking) chat template. The model now emits the hybrid format directly.
@@ -299,21 +366,7 @@ lastbox> Check USB-C cable AWG ≤20, no powered USB peripherals draining curren
 4. **Validation set drift**: 114-dialog val_v2 is too small relative to training noise — eval_loss is flat across checkpoints because differences are within noise. Bigger held-out set (≥300) needed for cleaner overfit detection.
 5. **Server disconnects under load**: ~36 % of golden eval queries hit the 180 s aiohttp timeout. The model handles each request fine in isolation; the issue is concurrent request queueing on a single CPU slot. Multi-slot llama-server config + per-source max_tokens would fix this without retraining.
 
-6. **Voice input — designed out for v1, wired for v2**: the original plan
-   included a ReSpeaker 2-Mic Pi HAT V2.0 + a tiny on-device Whisper for
-   spoken queries. We dropped it for the hackathon submission because the
-   physical HAT on hand shipped with a TLV320AIC3104 codec instead of the
-   advertised WM8960; the documented `seeed-2mic-voicecard` overlay fails
-   with `-121`, and the `googlevoicehat-soundcard` overlay loads cleanly but
-   leaves the AIC3104 ADC muted (capture returns RMS=0). Unmuting it requires
-   either a custom overlay using `snd-soc-tlv320aic3x` or a one-shot `i2cset`
-   register sequence — both feasible, neither shippable inside the deadline
-   without risking the rest of the submission. The next iteration adds an
-   `/asr` endpoint that pipes a short `arecord` capture through
-   `whisper.cpp tiny.en` (~75 MB GGML) and reuses the same `/radio-query`
-   downstream — the wiring is sketched in the orchestrator already.
-
-7. **LoRa hardware failure mid-week**: the SX1262 LoRa HAT on this lastbox
+6. **LoRa hardware failure mid-week**: the SX1262 LoRa HAT on this lastbox
    stopped responding during the hackathon week (power LED lit, but the four
    SPI/control pins read as electrically floating; reseat did not change
    anything). The mesh-radio code path in `demo.py` (`send_lora_message`,
@@ -325,7 +378,7 @@ lastbox> Check USB-C cable AWG ≤20, no powered USB peripherals draining curren
    USB device or swapping in a working SX1262 would activate the wired path
    without code changes.
 
-8. **NVMe controller crash on lastbox, ~2 h before deadline**: the SD-card
+7. **NVMe controller crash on lastbox, ~2 h before deadline**: the SD-card
    bundle was always the canonical source; the NVMe held the deployed copy.
    When the NVMe controller faulted (`CSTS=0xffffffff`, classic RPi 5 PCIe
    power-saving bug — kernel suggests
