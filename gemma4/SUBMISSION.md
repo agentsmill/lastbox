@@ -341,6 +341,75 @@ pass with `r = +1 if expected_tool_called else 0` against the same dialog set �
 ~1 h additional GB10 time. Code path: `gemma4/scripts/train_sft.py` →
 copy-and-rename to `train_grpo.py`, swap trainer.
 
+### RAG over offline survival manuals
+
+The v1 Polish-language box shipped with a working RAG pipeline
+(`src/rag/pipeline.py` in `lastbox.sdbackup`, still on the SD card today):
+**nomic-embed-text** (274 MB GGUF) for retrieval, **libzim** for offline
+Wikipedia dumps (Kiwix `.zim` files), and a top-K passage injection right
+before the generator. v2 ships *without* it because (a) we rebuilt the
+inference path around `llama.cpp` and the v1 retriever was wired into the
+Ollama-era stack; (b) every byte of RAM saved is a byte the model can use —
+the embed model + KV cache for retrieved context would push the 8 GB Pi to
+its limit during a vision call; (c) we wanted the v2 baseline numbers to be
+honest "what does the fine-tune itself know" rather than RAG-flattered.
+
+The next iteration brings it back, scoped tightly:
+
+```
+user question
+    │
+    ▼  POST /chat?rag=true
+┌────────────────────────────────────────────────┐
+│ webapp/server.py                               │
+│   retrieve(query, k=4):                        │
+│     ├─ embed query  (nomic-embed-text, ~80 ms) │
+│     ├─ sqlite-vss   ANN top-K                  │
+│     └─ return [passage_id, score, text…]       │
+│   build system prompt + retrieved passages     │
+│     ──▶ existing llama-server multimodal call  │
+└────────────────────────────────────────────────┘
+```
+
+Corpus to index (in priority order — all public-domain or CC):
+
+1. **US Army Survival FM 21-76** (~500 pages, public domain) — the
+   gold-standard reference for first aid, signaling, water, shelter,
+   navigation, and field hazards.
+2. **WikiMed Medical Encyclopedia** (Kiwix `.zim`, ~2 GB) — focused medical
+   articles, already in ZIM format we used in v1.
+3. **Our own `train_v2.jsonl`** — the 1 034 fine-tune dialogs become
+   retrieval examples, so the model can quote its own training response
+   style verbatim when a near-duplicate query arrives.
+4. **Wikipedia Survival / Bushcraft / First-aid subset** (Kiwix), trimmed
+   to ≤200 MB to fit the SD-card budget alongside the model.
+
+Storage budget on the box:
+
+| Component             | Size            | Notes |
+|-----------------------|-----------------|-------|
+| nomic-embed-text Q5   | ~180 MB         | one-time load, mlock |
+| sqlite-vss index      | ~50–100 MB      | dense vectors + IDs |
+| FM 21-76 + WikiMed    | ~2.2 GB         | sourced as ZIM |
+| Our dataset           | ~6 MB           | already in repo |
+
+Total ≈ 2.5 GB, fits with 3 GB headroom on the current SD layout.
+
+Expected latency hit per query: **~150–300 ms** for embed + ANN
+(nomic-embed is small and the index would have ≤50 k passages); negligible
+next to the 6–65 s generation cost. The win is *citations*: each answer
+returns the source passage IDs, which the UI can render as
+"FM 21-76, Ch. 4, p. 87" pills under the response. That's the difference
+between "the model said so" and "the manual says so", which matters for
+a survival assistant where the user has to act on the answer.
+
+Why not in this submission: the inference path on the box is freshly back up
+after the NVMe failure and we'd rather not destabilise it inside the
+recording window. The pipeline is sketched, the corpus is identified, the
+budget fits, and the v1 code in `lastbox.sdbackup/src/rag/pipeline.py` is a
+working reference for the wire format. v2 ships this on the same SD card,
+behind a `?rag=true` flag so the no-RAG baseline stays measurable.
+
 ### Image-paired fine-tune for safe plant-ID
 
 Today the vision branch is untrained — Gemma's pretraining handles "what is in

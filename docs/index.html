@@ -525,6 +525,30 @@ lastbox&gt; Check USB-C cable AWG ≤20, no powered USB peripherals draining
     </div>
 
     <div class="panel">
+      <h3>RAG over offline survival manuals</h3>
+      <p>
+        v1 (Polish) shipped a working RAG pipeline — <strong>nomic-embed-text</strong>
+        (~180 MB) + <strong>libzim</strong> ZIM dumps + top-K passage
+        injection. v2 ships without it on purpose so the baseline numbers
+        measure what the fine-tune itself knows. The next iteration brings
+        it back behind a <code>?rag=true</code> flag.
+      </p>
+<pre>user → embed (nomic, ~80 ms)
+     → sqlite-vss ANN top-K
+     → inject passages
+     → llama-server (existing path)
+     → answer + cited passage IDs</pre>
+      <p>
+        Corpus on the SD card (~2.5 GB total, fits today's budget): US Army
+        <strong>FM 21-76</strong> (public domain), <strong>WikiMed</strong>
+        ZIM dump, our own <code>train_v2.jsonl</code>, and a trimmed
+        Wikipedia survival/first-aid subset. Win is <em>citations</em> —
+        every answer carries a "FM 21-76, Ch. 4, p. 87" tag so the operator
+        knows where the advice came from.
+      </p>
+    </div>
+
+    <div class="panel">
       <h3>Image-paired fine-tune</h3>
       <p>
         Today the vision branch is untrained — Gemma's pretraining handles

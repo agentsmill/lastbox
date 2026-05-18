@@ -65,6 +65,20 @@ xdg-open http://lastbox.local:8080/
 See `gemma4/SUBMISSION.md` §"Reproducing" — `generate → process → train_sft →
 convert → quantize → rsync` in ~1.5 h on a single GB10 (or any modern CUDA box).
 
+## Roadmap (wired, not vapor)
+
+The v1 box ships as a working baseline. Switches that are designed in but not
+flipped for this submission — full breakdown in
+[`gemma4/SUBMISSION.md` §"Roadmap"](gemma4/SUBMISSION.md):
+
+- **Voice in/out** — `arecord → whisper.cpp tiny.en → /radio-query → piper/espeak`. Blocked on the ReSpeaker HAT's actual codec (TLV320AIC3104, not the silkscreened WM8960).
+- **Real mesh-radio packets** — `meshtastic --port` wiring already present in `demo.py`. Activates the moment a working LoRa device shows up.
+- **GRPO tool-call training** — close the ~0% `<tool_call>` emission gap with `r = +1 if expected_tool_called else 0`.
+- **RAG over offline survival manuals** — `nomic-embed-text` + `sqlite-vss` over US Army FM 21-76, WikiMed ZIM, and our own `train_v2.jsonl`. ~2.5 GB on the SD card, ~150–300 ms latency hit, citations attached to every answer. v1 (Polish) shipped this; v2 ships without so baseline measures the fine-tune itself.
+- **Image-paired SFT** — ~500 CC-licensed plant photos for safe plant-ID (rowan vs. yew toxicity).
+- **AP mode** — `hostapd + dnsmasq`; the box becomes the network, not a node on someone else's.
+- **NVMe power-saving fix** — boot params `nvme_core.default_ps_max_latency_us=0 pcie_aspm=off pcie_port_pm=off` for the next image.
+
 ## License
 
 Apache 2.0 for code (see `LICENSE` / `gemma4/LICENSE`).
