@@ -206,9 +206,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path in ("/", "/index.html"):
+            return self._serve_static("demo.html", "text/html; charset=utf-8")
+        if self.path in ("/camera", "/camera.html"):
             return self._serve_static("index.html", "text/html; charset=utf-8")
         if self.path in ("/mesh", "/mesh.html"):
             return self._serve_static("mesh.html", "text/html; charset=utf-8")
+        if self.path in ("/demo", "/demo.html"):
+            return self._serve_static("demo.html", "text/html; charset=utf-8")
         if self.path == "/mesh-status":
             return self._handle_mesh_status()
         if self.path == "/stream":
