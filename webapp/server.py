@@ -207,6 +207,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path in ("/", "/index.html"):
             return self._serve_static("index.html", "text/html; charset=utf-8")
+        if self.path in ("/mesh", "/mesh.html"):
+            return self._serve_static("mesh.html", "text/html; charset=utf-8")
+        if self.path == "/mesh-status":
+            return self._handle_mesh_status()
         if self.path == "/stream":
             return self._serve_stream()
         if self.path == "/health":
@@ -231,7 +235,95 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         if self.path == "/snap":
             return self._handle_snap()
+        if self.path == "/radio-query":
+            return self._handle_radio_query()
         self.send_error(404)
+
+    def _handle_radio_query(self) -> None:
+        """Field a survival query as if it came over LoRa.
+
+        We force the model into the same constrained mode that the production
+        orchestrator uses for any reply destined for the radio: terse, single
+        leading sentence, optional numbered list, hard 150-byte cap. The reply
+        is what *would* be transmitted back over the mesh — the actual radio
+        send is gated on hardware presence (see /mesh-status).
+        """
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length) if length else b"{}"
+        try:
+            req = json.loads(body or b"{}")
+        except json.JSONDecodeError:
+            req = {}
+        msg = (req.get("message") or "").strip()
+        if not msg:
+            return self._send_json(400, {"error": "message required"})
+
+        sys_prompt = (
+            "You are LastBox, an offline survival assistant relaying answers over "
+            "LoRa mesh radio. Reply in ONE short sentence (or one sentence + a "
+            "short numbered list if procedural). Hard limit 150 bytes UTF-8. "
+            "Be specific and actionable. No preamble. English."
+        )
+        payload = {
+            "model": "v3-q4_k_m.gguf",
+            "messages": [
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": msg},
+            ],
+            "max_tokens": 80,
+            "temperature": 0.5,
+            "stream": False,
+        }
+        t0 = time.time()
+        try:
+            req_http = urllib.request.Request(
+                LLAMA_URL,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req_http, timeout=60) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            return self._send_json(502, {"error": f"gemma call failed: {e}"})
+        latency_ms = int((time.time() - t0) * 1000)
+        answer = data["choices"][0]["message"]["content"].strip()
+        return self._send_json(
+            200,
+            {
+                "answer": answer,
+                "bytes": len(answer.encode("utf-8")),
+                "byte_cap": 150,
+                "within_cap": len(answer.encode("utf-8")) <= 150,
+                "latency_ms": latency_ms,
+            },
+        )
+
+    def _handle_mesh_status(self) -> None:
+        import glob
+        tty_devices = sorted(glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*"))
+        try:
+            import importlib
+            meshtastic_installed = importlib.util.find_spec("meshtastic") is not None
+        except Exception:
+            meshtastic_installed = False
+        # SX1262 HAT GPIO probe — pins floating means HAT is dead or absent.
+        try:
+            with open("/sys/class/gpio/gpio23/value") as f:
+                aux_pin = f.read().strip()
+        except Exception:
+            aux_pin = "unreadable"
+        self._send_json(
+            200,
+            {
+                "lora_hat_present": False,  # SX1262 confirmed dead in hardware probe
+                "lora_hat_note": "SX1262 HAT power LED lit but all 4 signal pins float (MISO/BUSY/AUX/DIO1). Hardware-side failure.",
+                "usb_serial_devices": tty_devices,
+                "meshtastic_python_installed": meshtastic_installed,
+                "aux_gpio_raw": aux_pin,
+                "would_relay_via": "Meshtastic over USB serial OR direct SX1262 SPI",
+            },
+        )
 
     def _serve_static(self, name: str, ctype: str) -> None:
         path = STATIC_DIR / name
