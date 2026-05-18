@@ -248,9 +248,12 @@
   <p class="tag">offline survival assistant in a pelican case.</p>
   <p class="one-line">
     A Raspberry Pi 5, a LoRa 868 MHz radio HAT, a camera and a fine-tuned
-    <strong style="color:var(--fg-bright)">Gemma 4 E2B</strong> running on an ARM CPU. Answers survival
-    questions, identifies plants and wounds from its lens, relays terse
-    messages over a Meshtastic mesh — <strong style="color:var(--fg-bright)">no internet, no cloud, no
+    <strong style="color:var(--fg-bright)">Gemma 4 E2B</strong>, trained with
+    <strong style="color:var(--fg-bright)">Unsloth</strong> on a single GB10
+    and served by <strong style="color:var(--fg-bright)">llama.cpp</strong>
+    on an ARM CPU. Answers survival questions, identifies plants and wounds
+    from its lens, relays terse messages over a Meshtastic mesh —
+    <strong style="color:var(--fg-bright)">no internet, no cloud, no
     phone-home</strong>. When the network is the first thing to fail, you still
     have the box.
   </p>
@@ -260,6 +263,8 @@
     <span class="pill ok"><strong>SUSTAINED</strong> 6.4–7 TOK/S</span>
     <span class="pill ok"><strong>MODEL</strong> GEMMA-4-E2B Q4_K_M (3.4 GB)</span>
     <span class="pill ok"><strong>VISION</strong> MMPROJ-F16 (940 MB)</span>
+    <span class="pill ok"><strong>TRAINED WITH</strong> UNSLOTH · LORA r=8 α=8</span>
+    <span class="pill ok"><strong>SERVED BY</strong> LLAMA.CPP · DOCKER</span>
     <span class="pill"><strong>HOST</strong> RPI 5 · 8 GB · ARM CORTEX-A76</span>
     <span class="pill warn"><strong>LORA HAT</strong> SX1262 DOWN (SIMULATION)</span>
   </div>
