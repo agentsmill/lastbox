@@ -170,6 +170,33 @@ def _safe_generate(messages, max_new_tokens, temperature, label="chat"):
         return f"⚠️ Model generation failed ({type(e).__name__}). Try again in a few seconds — ZeroGPU may be queued."
 
 
+def _tidy_list(text: str) -> str:
+    """Clean common model output quirks in numbered lists:
+      - Drop orphan "N" or "N." lines (no content after)
+      - Drop the leading "1." pseudo-header if the next lines are bulleted
+      - Collapse "\\n2\\n2. " duplicate-number pattern
+      - Drop trailing "N." that's empty
+    """
+    if not text:
+        return text
+    lines = text.split("\n")
+    out: list[str] = []
+    for ln in lines:
+        s = ln.strip()
+        # Orphan "2" or "3." with no content after the dot
+        if re.fullmatch(r"\d+\.?", s):
+            continue
+        out.append(ln)
+    cleaned = "\n".join(out)
+    # If text starts with "1.\n- " (numbered header before bullet list), drop the "1."
+    cleaned = re.sub(r"^\s*1\.\s*\n+\s*-", "-", cleaned)
+    # Collapse "N\nN." duplicate (model sometimes echoes the next index)
+    cleaned = re.sub(r"\n(\d+)\n(\1\.)", r"\n\2", cleaned)
+    # Drop trailing empty numbered item
+    cleaned = re.sub(r"\n\s*\d+\.\s*$", "", cleaned)
+    return cleaned.strip()
+
+
 def _byte_truncate(text: str, limit: int) -> str:
     """Cut UTF-8 text at the most natural boundary under `limit` bytes."""
     if not text:
@@ -312,10 +339,10 @@ def respond_lora(message: str, history: list) -> str:
             final_answer_text = snippet
 
     if final_answer_text:
-        # Enforce the 150-byte LoRa cap: truncate at a clean boundary
+        # Clean orphan numbers + mixed-list quirks first, then enforce 150-byte cap
+        final_answer_text = _tidy_list(final_answer_text)
         final_answer_text = _byte_truncate(final_answer_text, 150)
-        # Tidy up: drop trailing standalone "N." (broken numbered item like "3.")
-        final_answer_text = re.sub(r"\s*\d+\.\s*$", "", final_answer_text)
+        final_answer_text = _tidy_list(final_answer_text)  # re-tidy after truncation
         final_answer_text = re.sub(r"\s*\d+\}\s*$", "", final_answer_text)
         parts.append(f"💬 **Reply:** {final_answer_text}")
         nb = len(final_answer_text.encode("utf-8"))
