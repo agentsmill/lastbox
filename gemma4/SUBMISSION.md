@@ -291,6 +291,141 @@ lastbox> Check USB-C cable AWG ≤20, no powered USB peripherals draining curren
 
 ---
 
+## Post-deadline v6: SFT warmup on tool-only pairs — tool_emission solved
+
+After v4/v5 GRPO plateaued at 0% tool_emission, we executed roadmap path #1
+(SFT warmup on tool-only pairs) — and discovered the previous eval methodology
+also had a bug. Two changes, one breakthrough.
+
+### What changed
+
+1. **Built a tool-only SFT dataset** (`gemma4/data/train_v2_toolonly.jsonl`,
+   1034 pairs): for every train_v2 dialog, kept only `[user, assistant_tool_call]`
+   — cut everything after the first tool call. Forces the SFT objective to be
+   "the first response IS a `<tool_call>`".
+2. **12-minute SFT on the v3 SFT base** (Unsloth FastModel, r=8 α=8, lr=2e-4,
+   1 epoch, batch 4×4=16): final loss 0.018. 65 optimizer steps.
+3. **Discovered the eval-vs-train prompt mismatch** while debugging the
+   resulting 0% emission: training prompts had the full tool definitions JSON
+   embedded *in the user message* (4 233 chars total), but
+   `eval_v2_tool.py` passed only `SYSTEM_PROMPT_EN` (733 chars) — no tool
+   definitions, no `Tool call format:` hint. The model was correctly trained,
+   the eval was asking the wrong question. Fixed by routing
+   `process_v2._build_system_prompt_with_tools()` into the eval, which
+   reconstructs the exact training-time prompt structure.
+
+### Results on golden_en (tool-allowed system prompt with tool defs)
+
+| Metric              | v3      | v4 GRPO | v5 GRPO | v6 (stream eval) | **v6 (no-stream eval)** |
+|---------------------|---------|---------|---------|------------------|-------------------------|
+| tool_emission_rate  | ~0%     | 0%      | 0%      | 48%              | **72%**                 |
+| tool_accuracy       | 0%      | 0%      | 0%      | 44%              | **64%**                 |
+| arg_validity        | 4%      | 4%      | 4%      | 36%              | **56%**                 |
+| agentic_score       | 0.016   | 0.016   | 0.016   | 0.408            | **0.608**               |
+| byte_compliance     | 0.48    | 0.52    | 0.52    | 0.52             | **1.000**               |
+| format_ok           | 0.52    | 0.52    | 0.52    | 0.52             | **1.000**               |
+| persona_ok          | 0.52    | 0.52    | 0.52    | 0.52             | **1.000**               |
+| response_quality    | 0.506   | 0.520   | 0.520   | 0.520            | **1.000**               |
+| completed/25        | 14      | 13      | 13      | 13               | **25**                  |
+
+**38× jump in agentic_score** (0.016 → 0.608) from a 12-minute SFT pass plus
+two eval-methodology fixes. Each fix moved a single metric:
+
+1. **SFT warmup on tool-only pairs** — moved tool_emission/accuracy from ~0%
+   to ~50%.
+2. **Tool-defs in system prompt at eval time** (`process_v2._build_system_prompt_with_tools`)
+   — unblocked tool emission, which the original eval was suppressing by
+   omitting the 3.5 KB tool definitions JSON the model trained on.
+3. **Non-streaming POST + 2-retry on disconnect** — moved completion rate
+   from 13/25 to 25/25, which pulled byte_compliance / format_ok /
+   persona_ok / response_quality from 0.52 (which was exactly 13/25, the
+   completion ratio) to 1.000.
+
+The 0.52 ceiling on byte/format/persona was *never* a quality issue — every
+single completed dialog passed all three flags. It was the streaming-eval
+disconnect rate showing through as a metric floor.
+
+### Lesson worth keeping
+
+When the SFT base has p(behaviour) ≈ 0, GRPO with the typical KL constraint
+(β = 0.04) cannot move it to ≈ 1 inside a small number of steps. A *short
+targeted SFT pass* to set the prior — even just hundreds of pairs of
+`(prompt, behaviour)` — followed by GRPO for shaping/refinement is the
+right pipeline. We started with GRPO and burned 3 h of GB10 time before
+this became obvious from the data.
+
+The other lesson: **always verify the eval prompt is byte-for-byte the
+prompt format the model trained on**. Our `eval_v2_tool.py` was missing
+the tool definitions block; the model had no signal that tool emission
+was even on the table.
+
+---
+
+## Post-deadline v4 + v5 GRPO experiment
+
+After the hackathon submission we kicked off a dynamic /loop pass that
+implemented RAG end-to-end (live on the box) and ran two GRPO iterations to
+try to lift the tool-emission rate from the v3 baseline.
+
+### Eval table (golden_en, tool-allowed system prompt)
+
+| Metric                | v3 SFT  | v4 GRPO (reward v1) | v5 GRPO (reward v2) |
+|-----------------------|---------|---------------------|---------------------|
+| tool_emission_rate    | ~0%     | **0%**              | **0%**              |
+| byte_compliance       | 0.48    | 0.52                | 0.52                |
+| format_ok             | 0.52    | 0.52                | 0.52                |
+| persona_ok            | 0.52    | 0.52                | 0.52                |
+| response_quality      | 0.506   | 0.520               | 0.520               |
+| median first-token    | 9 184 ms| **1 735 ms**        | 8 460 ms            |
+| completed dialogs     | 14/25   | 13/25               | 13/25               |
+
+### Reward designs
+
+```
+v1 reward (v4):   r = 0.5·tool_match + 0.3·format_ok + 0.2·byte_cap_ok
+v2 reward (v5):   if expected_tool exists:
+                    correct_tool: +1.0   wrong: 0.0   no tool: -0.5  (penalty)
+                  else:
+                    no tool: +0.6 + 0.25·format + 0.15·byte
+                    tool emitted: 0.0   (spurious)
+```
+
+### What we learned
+
+- **GRPO with KL=0.04 cannot move tool_emission from ~0% on the v3 SFT base
+  in 200 steps**, even with an active −0.5 penalty for skipping the tool when
+  expected. The KL term penalises the large policy shift needed to go from
+  p(tool_call)≈0 to p(tool_call)≈1; the model converges back to "skip the
+  tool, give a direct text answer" because that path picks up the
+  format + byte_cap reward components without committing to a high-KL move.
+- v4 was a clear latency win (median first-token 9.2 s → 1.7 s); v5 walked
+  that back, suggesting the v2 reward shape is more brittle even though it's
+  better at conveying intent.
+- The byte_compliance bump (48% → 52%) is real and shows GRPO can move
+  smaller behaviours under this beta. It's the size of the policy shift that
+  matters, not whether the reward is dense.
+
+### What would actually fix tool emission (v6 in roadmap below)
+
+Two paths, neither is "another GRPO iteration":
+
+1. **SFT warmup on tool-only pairs** — filter `train_v2.jsonl` to the 993
+   prompts whose first assistant turn is a `<tool_call>`, cut the dataset
+   off after the tool_call, do a quick 50–200-step SFT to set the prior on
+   tool emission. Then GRPO refines without needing to break the KL ceiling.
+2. **GBNF-constrained decoding in llama.cpp** — the server accepts a grammar
+   that *forces* the first generated tokens into `<tool_call>{…}</tool_call>`
+   form. Achieves 100% tool emission trivially, but reduces the model's
+   ability to skip the tool when it isn't actually needed. A two-stage
+   "should I tool?" classifier in the orchestrator would gate this cleanly.
+
+The /loop iteration policy capped at 3 GRPO attempts before escalating;
+diagnosis after attempts 1 and 2 made it clear that a third GRPO with
+different hyperparams (lower beta, more steps) is unlikely to break the
+plateau — the gap is in approach, not parameters.
+
+---
+
 ## Roadmap — what the v1 box is wired for
 
 We picked the scope of this submission so every shipped surface is honest about

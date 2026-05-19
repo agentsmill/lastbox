@@ -1,0 +1,418 @@
+{
+  "summary": {
+    "n": 25,
+    "tool_accuracy": 0.64,
+    "arg_validity": 0.56,
+    "tool_emission_rate": 0.72,
+    "byte_compliance": 1.0,
+    "format_ok": 1.0,
+    "persona_ok": 1.0,
+    "response_quality_score": 1.0,
+    "agentic_score": 0.608,
+    "median_first_token_ms": 5935.585259998334,
+    "completed": 25
+  },
+  "results": [
+    {
+      "id": "g_fa_01",
+      "user": "My friend just got a deep cut on the thigh and it's spurting blood. What now?",
+      "source": "touchscreen",
+      "expected_tool": "search_knowledge",
+      "actual_tool": "search_knowledge",
+      "tool_args": {
+        "query": "first aid for arterial bleeding"
+      },
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": true,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 6216.025960005936
+    },
+    {
+      "id": "g_fa_02",
+      "user": "child not breathing",
+      "source": "lora",
+      "expected_tool": "search_knowledge",
+      "actual_tool": "search_knowledge",
+      "tool_args": {
+        "query": "first aid for respiratory distress"
+      },
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": false,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 5631.522243005747
+    },
+    {
+      "id": "g_fa_03",
+      "user": "What's the adult CPR compression rate and depth?",
+      "source": "touchscreen",
+      "expected_tool": "search_knowledge",
+      "actual_tool": null,
+      "tool_args": {},
+      "final_response": "search_knowledge(query=\"adult CPR compression rate and depth\")",
+      "tool_match": false,
+      "args_valid": false,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 3277.095115998236
+    },
+    {
+      "id": "g_fa_04",
+      "user": "hypothermia signs?",
+      "source": "lora",
+      "expected_tool": "search_knowledge",
+      "actual_tool": "search_knowledge",
+      "tool_args": {
+        "query": "hypothermia symptoms first aid"
+      },
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": true,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 5736.976346001029
+    },
+    {
+      "id": "g_fa_05",
+      "user": "Boiling water spilled on my arm, big red blister forming — first aid?",
+      "source": "touchscreen",
+      "expected_tool": "search_knowledge",
+      "actual_tool": "search_knowledge",
+      "tool_args": {
+        "query": "first aid for severe burn blister"
+      },
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": true,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 6088.951275996806
+    },
+    {
+      "id": "g_bc_01",
+      "user": "How long to boil water at 2500m to make it safe?",
+      "source": "touchscreen",
+      "expected_tool": "search_knowledge",
+      "actual_tool": null,
+      "tool_args": {},
+      "final_response": "<tool_call>search_knowledge{\"query\":\"boil water altitude safety time\"}</tool_call>",
+      "tool_match": false,
+      "args_valid": false,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 5273.249953999766
+    },
+    {
+      "id": "g_bc_02",
+      "user": "start fire wet wood",
+      "source": "lora",
+      "expected_tool": "search_knowledge",
+      "actual_tool": "search_knowledge",
+      "tool_args": {
+        "query": "start fire wet wood survival method"
+      },
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": true,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 5693.575741999666
+    },
+    {
+      "id": "g_bc_03",
+      "user": "I have a tarp, two trees 3m apart and paracord. Quickest dry shelter?",
+      "source": "touchscreen",
+      "expected_tool": "search_knowledge",
+      "actual_tool": "search_knowledge",
+      "tool_args": {
+        "query": "quickest dry shelter tarp two trees 3m apart paracord"
+      },
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": true,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 7620.515176000481
+    },
+    {
+      "id": "g_bc_04",
+      "user": "red berry on bush ok eat?",
+      "source": "lora",
+      "expected_tool": "capture_image",
+      "actual_tool": null,
+      "tool_args": {},
+      "final_response": "",
+      "tool_match": false,
+      "args_valid": false,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 5939.945803998853
+    },
+    {
+      "id": "g_bc_05",
+      "user": "sodis water how long sun",
+      "source": "lora",
+      "expected_tool": "search_knowledge",
+      "actual_tool": null,
+      "tool_args": {},
+      "final_response": "",
+      "tool_match": false,
+      "args_valid": false,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 5865.010433000862
+    },
+    {
+      "id": "g_nv_01",
+      "user": "No compass, sun overhead — which way is north?",
+      "source": "touchscreen",
+      "expected_tool": "search_knowledge",
+      "actual_tool": "search_knowledge",
+      "tool_args": {
+        "query": "how to determine north without compass or sun"
+      },
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": true,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 6320.116344002599
+    },
+    {
+      "id": "g_nv_02",
+      "user": "signal helicopter how",
+      "source": "lora",
+      "expected_tool": "search_knowledge",
+      "actual_tool": "analyze_signal",
+      "tool_args": {},
+      "final_response": "1. Check RSSI/SNR.\n2. Look for burst transmission.\n3. Wait for reply.\n4. Assess link quality.",
+      "tool_match": false,
+      "args_valid": false,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 10008.608403004473
+    },
+    {
+      "id": "g_nv_03",
+      "user": "Send to Node B that I'm at 50.12N 19.93E and need water",
+      "source": "touchscreen",
+      "expected_tool": "send_lora_message",
+      "actual_tool": "send_lora_message",
+      "tool_args": {
+        "text": "50.12N 19.93E need water"
+      },
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": true,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 8735.929177004436
+    },
+    {
+      "id": "g_nv_04",
+      "user": "sos pattern dimensions",
+      "source": "lora",
+      "expected_tool": "search_knowledge",
+      "actual_tool": "search_knowledge",
+      "tool_args": {
+        "query": "SOS distress signal dimensions for LoRa"
+      },
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": true,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 5931.8935069968575
+    },
+    {
+      "id": "g_nv_05",
+      "user": "listen channel 10s sos",
+      "source": "lora",
+      "expected_tool": "listen_lora",
+      "actual_tool": "listen_lora",
+      "tool_args": {},
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": false,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 5735.108182998374
+    },
+    {
+      "id": "g_pw_01",
+      "user": "Want to power the LastBox 24/7 with solar — minimum panel size?",
+      "source": "touchscreen",
+      "expected_tool": "search_knowledge",
+      "actual_tool": null,
+      "tool_args": {},
+      "final_response": "",
+      "tool_match": false,
+      "args_valid": false,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 7578.077067002596
+    },
+    {
+      "id": "g_pw_02",
+      "user": "battery temp now",
+      "source": "lora",
+      "expected_tool": "get_system_status",
+      "actual_tool": "get_system_status",
+      "tool_args": {},
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": true,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 4867.709981997905
+    },
+    {
+      "id": "g_pw_03",
+      "user": "Lightning visible 8 seconds before thunder — am I safe on this ridge?",
+      "source": "touchscreen",
+      "expected_tool": "search_knowledge",
+      "actual_tool": null,
+      "tool_args": {},
+      "final_response": "",
+      "tool_match": false,
+      "args_valid": false,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 5935.585259998334
+    },
+    {
+      "id": "g_pw_04",
+      "user": "iodine adult dose",
+      "source": "lora",
+      "expected_tool": "search_knowledge",
+      "actual_tool": "search_knowledge",
+      "tool_args": {
+        "query": "iodine adult dosage survival"
+      },
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": true,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 5506.862540001748
+    },
+    {
+      "id": "g_pw_05",
+      "user": "signal quality rssi",
+      "source": "lora",
+      "expected_tool": "analyze_signal",
+      "actual_tool": "get_system_status",
+      "tool_args": {},
+      "final_response": "",
+      "tool_match": false,
+      "args_valid": true,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 4795.611140994879
+    },
+    {
+      "id": "g_el_01",
+      "user": "Pi 5 throws undervoltage warning even with the official 27W PSU. What to check?",
+      "source": "touchscreen",
+      "expected_tool": "search_knowledge",
+      "actual_tool": "search_knowledge",
+      "tool_args": {
+        "query": "Raspberry Pi 5 undervoltage warning 27W PSU issue"
+      },
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": true,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 8262.23261999985
+    },
+    {
+      "id": "g_el_02",
+      "user": "add node mesh how",
+      "source": "lora",
+      "expected_tool": "search_knowledge",
+      "actual_tool": "search_knowledge",
+      "tool_args": {
+        "query": "how to add node to loRa mesh network"
+      },
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": true,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 6115.344719997665
+    },
+    {
+      "id": "g_el_03",
+      "user": "BME280 not detected by i2cdetect on Pi 5 — debug steps?",
+      "source": "touchscreen",
+      "expected_tool": "search_knowledge",
+      "actual_tool": null,
+      "tool_args": {},
+      "final_response": "1. Check wiring for correct SDA/SCL pins.\n2. Verify pull-up resistors are present.\n3. Check I2C bus power supply stability.\n4. Test with a known working sensor.",
+      "tool_match": false,
+      "args_valid": false,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 16332.887103999383
+    },
+    {
+      "id": "g_el_04",
+      "user": "sx1262 hat pair fast",
+      "source": "lora",
+      "expected_tool": "search_knowledge",
+      "actual_tool": "search_knowledge",
+      "tool_args": {
+        "query": "sx1262 HAT fast setup guide"
+      },
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": true,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 6449.047770998732
+    },
+    {
+      "id": "g_el_05",
+      "user": "scan 30s any sos",
+      "source": "lora",
+      "expected_tool": "listen_lora",
+      "actual_tool": "listen_lora",
+      "tool_args": {},
+      "final_response": "",
+      "tool_match": true,
+      "args_valid": false,
+      "byte_compliance": true,
+      "format_ok": true,
+      "persona_ok": true,
+      "first_token_ms": 5667.090488001122
+    }
+  ]
+}

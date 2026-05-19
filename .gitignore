@@ -53,6 +53,20 @@ out/lastbox-gemma4-e2b-sft-v3-nothink/processor_config.json
 out/lastbox-gemma4-e2b-sft-v3-nothink/chat_template.jinja
 out/lastbox-gemma4-e2b-sft-v3-nothink/config.json
 out/lastbox-gemma4-e2b-sft-v3-nothink/meta.json
+# GRPO experiment outputs — keep only LoRA adapters; weights too big for git.
+out/lastbox-gemma4-e2b-grpo-v4/
+out/lastbox-gemma4-e2b-grpo-v5/
+# v6 SFT-warmup checkpoint — keep only LoRA, drop merged/ + safetensors + GGUFs.
+out/lastbox-gemma4-e2b-sft-v6-toolprior/checkpoints/
+out/lastbox-gemma4-e2b-sft-v6-toolprior/merged/
+out/lastbox-gemma4-e2b-sft-v6-toolprior/*.gguf
+out/lastbox-gemma4-e2b-sft-v6-toolprior/tokenizer*.json
+out/lastbox-gemma4-e2b-sft-v6-toolprior/processor_config.json
+out/lastbox-gemma4-e2b-sft-v6-toolprior/chat_template.jinja
+out/lastbox-gemma4-e2b-sft-v6-toolprior/adapter_config.json
+out/lastbox-gemma4-e2b-sft-v6-toolprior/adapter_model.safetensors
+out/lastbox-gemma4-e2b-sft-v6-toolprior/generation_config.json
+out/lastbox-gemma4-e2b-sft-v6-toolprior/meta.json
 
 # Deployment bundle weights — too big for git, hosted as release artefacts.
 gemma4/deploy/bundle/models/*.gguf

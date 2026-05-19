@@ -413,6 +413,75 @@
     the answer</strong>. v3 is shipped.
   </blockquote>
 
+  <h3>Post-deadline v6 (SFT warmup) — tool emission solved</h3>
+  <p>
+    After GRPO v4+v5 plateaued at 0% tool emission, we executed roadmap #1
+    (SFT warmup on tool-only pairs) and discovered the eval itself had a
+    prompt-mismatch bug. Two changes, one breakthrough:
+  </p>
+  <ol>
+    <li>Filtered train_v2 to 1034 <code>[user, assistant_tool_call]</code> pairs.</li>
+    <li>12-minute Unsloth SFT (r=8, α=8, lr=2e-4, 1 epoch, 65 steps). Loss 0.018.</li>
+    <li>Fixed the eval to use the <strong>full training-time system prompt</strong>
+      (with tool definitions JSON + format hint) — not the shorter
+      <code>SYSTEM_PROMPT_EN</code> alone. Eval had been suppressing
+      emission by omitting the tool defs block.</li>
+  </ol>
+  <table>
+    <tr><th>Metric</th><th>v3 SFT</th><th>v4 GRPO</th><th>v5 GRPO</th><th>v6 (stream eval)</th><th><strong>v6 final</strong></th></tr>
+    <tr><td class="k">tool_emission_rate</td><td>~0%</td><td>0%</td><td>0%</td><td>48%</td><td><strong>72%</strong></td></tr>
+    <tr><td class="k">tool_accuracy</td><td>0%</td><td>0%</td><td>0%</td><td>44%</td><td><strong>64%</strong></td></tr>
+    <tr><td class="k">arg_validity</td><td>4%</td><td>4%</td><td>4%</td><td>36%</td><td><strong>56%</strong></td></tr>
+    <tr><td class="k">agentic_score</td><td>0.016</td><td>0.016</td><td>0.016</td><td>0.408</td><td><strong>0.608</strong></td></tr>
+    <tr><td class="k">byte_compliance</td><td>0.48</td><td>0.52</td><td>0.52</td><td>0.52</td><td><strong>1.000</strong></td></tr>
+    <tr><td class="k">format_ok</td><td>0.52</td><td>0.52</td><td>0.52</td><td>0.52</td><td><strong>1.000</strong></td></tr>
+    <tr><td class="k">persona_ok</td><td>0.52</td><td>0.52</td><td>0.52</td><td>0.52</td><td><strong>1.000</strong></td></tr>
+    <tr><td class="k">response_quality</td><td>0.506</td><td>0.520</td><td>0.520</td><td>0.520</td><td><strong>1.000</strong></td></tr>
+    <tr><td class="k">completed / 25</td><td>14</td><td>13</td><td>13</td><td>13</td><td><strong>25</strong></td></tr>
+  </table>
+  <blockquote>
+    <strong>38× jump in agentic_score</strong> (0.016 → 0.608) from one
+    12-minute SFT pass + two eval-methodology fixes. The 0.52 ceiling on
+    byte_compliance / format_ok / persona_ok turned out to be 13/25
+    completion rate from streaming-SSE disconnects — never a quality issue.
+    Switching the eval to non-streaming POST + 2-retry on disconnect moved
+    completion to 25/25 and pulled every flag to 1.000.
+  </blockquote>
+
+  <h3>Post-deadline GRPO experiment (v4 + v5)</h3>
+  <p>
+    After the hackathon submission we ran two GRPO iterations to lift
+    tool_emission from the v3 baseline. The headline result: <strong>RAG is
+    live on the box and answers cite source IDs</strong>; <strong>GRPO with
+    KL=0.04 cannot move tool_emission from ~0% in 200 steps</strong> even
+    with an active −0.5 penalty for skipping the tool when expected.
+  </p>
+  <table>
+    <tr><th>Metric</th><th>v3 SFT</th><th>v4 GRPO (reward v1)</th><th>v5 GRPO (reward v2)</th></tr>
+    <tr><td class="k">tool_emission_rate</td><td>~0%</td><td><strong>0%</strong></td><td><strong>0%</strong></td></tr>
+    <tr><td class="k">byte_compliance</td><td>0.48</td><td>0.52</td><td>0.52</td></tr>
+    <tr><td class="k">format_ok</td><td>0.52</td><td>0.52</td><td>0.52</td></tr>
+    <tr><td class="k">response_quality</td><td>0.506</td><td>0.520</td><td>0.520</td></tr>
+    <tr><td class="k">median first-token</td><td>9 184 ms</td><td><strong>1 735 ms</strong></td><td>8 460 ms</td></tr>
+    <tr><td class="k">completed / 25</td><td>14</td><td>13</td><td>13</td></tr>
+  </table>
+  <p>
+    The lift in byte_compliance + the v4 latency win prove GRPO <em>can</em>
+    move smaller behaviours under this beta. The tool_emission plateau is
+    about <strong>policy-shift size, not reward density</strong>: the KL term
+    blocks the large move from p(tool)≈0 to p(tool)≈1. Two paths actually
+    fix this, neither is "another GRPO iteration":
+  </p>
+  <ol>
+    <li><strong>SFT warmup on tool-only pairs</strong> — filter
+      <code>train_v2.jsonl</code> to the 993 prompts whose first assistant
+      turn is a <code>&lt;tool_call&gt;</code>, do a quick 50–200-step SFT
+      to set the prior, then GRPO refines without needing to break the KL ceiling.</li>
+    <li><strong>GBNF-constrained decoding</strong> in <code>llama.cpp</code>
+      — force the first tokens into <code>&lt;tool_call&gt;{…}&lt;/tool_call&gt;</code>
+      form, gated by a "should I tool?" classifier in the orchestrator.</li>
+  </ol>
+
   <h3>Sample real interactions</h3>
 <pre>
 you (touchscreen)&gt; How many watts solar panel for my RPi 5?

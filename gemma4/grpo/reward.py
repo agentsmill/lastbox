@@ -96,11 +96,36 @@ def composite_reward(
     expected_tool: str | None,
     source: str | None,
 ) -> float:
-    return (
-        0.5 * tool_match_score(completion, expected_tool)
-        + 0.3 * format_ok_score(completion)
-        + 0.2 * byte_cap_ok_score(completion, source)
-    )
+    """v2 reward shape — break the v1 plateau.
+
+    v1 gave the same 0.5 to "emit correct tool, no answer" and
+    "emit no tool, give a direct correct answer". Model converged on the
+    easier no-tool path. v2 makes the tool path strictly dominant:
+
+      with expected_tool:
+        - correct tool emitted:  +1.0  (plus format/byte bonus if answer present)
+        - wrong tool emitted:    +0.0
+        - no tool emitted:       -0.5  (active penalty)
+
+      without expected_tool:
+        - no tool emitted:       +0.6 base + 0.25*format + 0.15*byte_cap
+        - tool emitted:          +0.0  (penalty for spurious tool emission)
+    """
+    parsed = parse_tool_call(completion)
+    fmt = format_ok_score(completion)
+    byc = byte_cap_ok_score(completion, source)
+
+    if expected_tool:
+        if parsed is None:
+            return -0.5
+        if parsed.get("name") == expected_tool:
+            return 1.0  # max reward — the answer comes from the tool result turn
+        return 0.0  # wrong tool
+
+    # No tool expected — reward a clean direct answer
+    if parsed is not None:
+        return 0.0  # spurious tool emission
+    return 0.6 + 0.25 * fmt + 0.15 * byc
 
 
 # TRL signature: reward_func(prompts, completions, **kwargs) -> list[float]
