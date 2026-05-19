@@ -170,6 +170,28 @@ def _safe_generate(messages, max_new_tokens, temperature, label="chat"):
         return f"⚠️ Model generation failed ({type(e).__name__}). Try again in a few seconds — ZeroGPU may be queued."
 
 
+def _byte_truncate(text: str, limit: int) -> str:
+    """Cut UTF-8 text at the most natural boundary under `limit` bytes."""
+    if not text:
+        return ""
+    enc = text.encode("utf-8")
+    if len(enc) <= limit:
+        return text
+    # Prefer a sentence boundary
+    for sep in [". ", "! ", "? ", ".\n", "\n"]:
+        idx = text.rfind(sep, 0, limit + 1)
+        if idx > 0 and len(text[: idx + len(sep)].encode("utf-8")) <= limit:
+            return text[: idx + len(sep)].strip()
+    # Fall back to word boundary
+    out = text
+    while len(out.encode("utf-8")) > limit and " " in out:
+        out = out.rsplit(" ", 1)[0]
+    # Hard cut at byte boundary as last resort
+    if len(out.encode("utf-8")) > limit:
+        out = out.encode("utf-8")[:limit].decode("utf-8", errors="ignore")
+    return out.strip()
+
+
 def _simulate_tool_result(call: dict) -> str:
     """Run a realistic-ish tool result so the model can produce its final
     answer (matches how `demo.py` orchestrates on the real device).
@@ -290,6 +312,11 @@ def respond_lora(message: str, history: list) -> str:
             final_answer_text = snippet
 
     if final_answer_text:
+        # Enforce the 150-byte LoRa cap: truncate at a clean boundary
+        final_answer_text = _byte_truncate(final_answer_text, 150)
+        # Tidy up: drop trailing standalone "N." (broken numbered item like "3.")
+        final_answer_text = re.sub(r"\s*\d+\.\s*$", "", final_answer_text)
+        final_answer_text = re.sub(r"\s*\d+\}\s*$", "", final_answer_text)
         parts.append(f"💬 **Reply:** {final_answer_text}")
         nb = len(final_answer_text.encode("utf-8"))
     elif visible:
