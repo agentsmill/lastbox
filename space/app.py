@@ -438,8 +438,11 @@ This Space runs the [v6 SFT-warmup checkpoint](https://huggingface.co/norecyc/la
 
 📦 [GitHub](https://github.com/agentsmill/lastbox) · 🌐 [Project site](https://agentsmill.github.io/lastbox/)
 
-> Cold-start ~30 s. Warm responses 3–10 s on ZeroGPU H200. On the actual
-> Raspberry Pi 5 it runs ~6–7 tok/s CPU.
+> **Heads-up:** cold-start ~30 s. Warm responses 5–20 s.
+> ZeroGPU has a shared free-tier GPU pool — if you see *"Model generation
+> failed — ZeroGPU may be queued"*, wait 20-30 s and resend. The LoRa Radio
+> tab runs **two** model turns per request (tool call → result → final reply),
+> so it burns quota faster than Free/RAG.
 """)
 
     with gr.Tabs():
