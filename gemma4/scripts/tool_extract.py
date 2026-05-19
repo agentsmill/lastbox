@@ -48,6 +48,32 @@ _BARE_RE = re.compile(
 )
 
 
+def _resolve_name(candidate: str) -> str | None:
+    """Map noisy/truncated tool names to canonical ones.
+
+    The v6 model sometimes emits "send_lor>a" or "send_lor" instead of
+    "send_lora_message". Match by prefix or by Levenshtein-ish containment.
+    """
+    if not candidate:
+        return None
+    cand = candidate.lower().strip()
+    if cand in TOOL_NAMES:
+        return cand
+    # Strip non-[a-z_] chars (drops stray '>', '<', digits, etc.)
+    norm = re.sub(r"[^a-z_]", "", cand)
+    if norm in TOOL_NAMES:
+        return norm
+    # Prefix match (e.g. "send_lor" → "send_lora_message")
+    for name in TOOL_NAMES:
+        if name.startswith(norm) and len(norm) >= 5:
+            return name
+    # Substring containment (e.g. "lora_message" → "send_lora_message")
+    for name in TOOL_NAMES:
+        if norm and norm in name and len(norm) >= 5:
+            return name
+    return None
+
+
 def _scrub(s: str) -> str:
     """Strip common corruption patterns inside JSON-looking text."""
     # Standalone '<' / '>' that are not part of valid tag (after _STRICT regex matched its own)
@@ -129,8 +155,11 @@ def extract_tool_call(text: str) -> tuple[dict | None, str]:
     m = _STRICT_RE.search(text)
     if m:
         parsed = _try_json(m.group(1))
-        if parsed and parsed.get("name") in TOOL_NAMES:
-            return parsed, (text[:m.start()] + text[m.end():]).strip()
+        if parsed:
+            resolved = _resolve_name(parsed.get("name", ""))
+            if resolved:
+                parsed["name"] = resolved
+                return parsed, (text[:m.start()] + text[m.end():]).strip()
 
     # 2. Loose JSON-looking call (with or without tags)
     m = _LOOSE_RE.search(text)
@@ -169,10 +198,25 @@ def extract_tool_call(text: str) -> tuple[dict | None, str]:
             (text[:m.start()] + tail_clean).strip(),
         )
 
-    # 4. No usable parse — but the text often contains tool_call ruins we
-    # don't want leaking into the chat (orphan tags, broken JSON, bareword
-    # shorthand we couldn't repair). Strip aggressively.
+    # 4. No usable parse — but the text may still contain a tool_call attempt
+    # we want to surface as malformed intent (so the user sees "model tried to
+    # call X" instead of an empty reply). Also strip the ruined fragment from
+    # the visible text.
     junked = text
+    malformed_intent: dict | None = None
+
+    # Try to detect intended tool name from any leftover '<tool_call>{"name":"X"' fragment
+    name_match = re.search(
+        r"<\s*tool_call\s*>[^{]*?\{[^}]*?\"name\"\s*:\s*\"([a-z_]+)",
+        junked, flags=re.DOTALL,
+    )
+    if name_match:
+        intended = _resolve_name(name_match.group(1)) or name_match.group(1)
+        malformed_intent = {
+            "name": intended,
+            "arguments_raw": text[name_match.end():][:120],
+            "_malformed": True,
+        }
 
     # Strip well-formed strict block (already handled above, but rerun for safety)
     junked = _STRICT_RE.sub("", junked)
@@ -194,16 +238,32 @@ def extract_tool_call(text: str) -> tuple[dict | None, str]:
     # `"name"` — it's a leaked tool_call JSON without tags. Drop it.
     stripped = junked.strip()
     if stripped.startswith("{") and stripped.endswith("}") and '"name"' in stripped:
+        if malformed_intent is None:
+            # Try to grab name from this leftover JSON too
+            jm = re.search(r"\"name\"\s*:\s*\"([a-z_]+)\"", stripped)
+            if jm:
+                malformed_intent = {
+                    "name": jm.group(1),
+                    "arguments_raw": stripped[:120],
+                    "_malformed": True,
+                }
         junked = ""
 
     # If a bareword tool name remains followed by '{', strip up to next '}'
     for n in TOOL_NAMES:
+        bare_match = re.search(re.escape(n) + r"\s*\{([^}]*)\}?", junked, flags=re.DOTALL)
+        if bare_match and malformed_intent is None:
+            malformed_intent = {
+                "name": n,
+                "arguments_raw": bare_match.group(1)[:120],
+                "_malformed": True,
+            }
         junked = re.sub(
             re.escape(n) + r"\s*\{[^}]*\}?",
             "", junked, flags=re.DOTALL,
         )
 
-    return None, junked.strip()
+    return malformed_intent, junked.strip()
 
 
 def clean_visible(text: str) -> str:
