@@ -235,17 +235,35 @@ def respond_lora(message: str, history: list) -> str:
             tool_result = _simulate_tool_result(call)
             parts.append(f"🛰️ **Tool result:** *{tool_result}*")
 
+            # Build a clean assistant tool_call message — strip any pre/post
+            # tokens so the second turn sees exactly what training looked like.
+            call_clean = (
+                "<tool_call>"
+                + json.dumps({"name": call["name"], "arguments": call.get("arguments", {})},
+                             ensure_ascii=False)
+                + "</tool_call>"
+            )
             followup_messages = [
                 {"role": "user", "content": user_content},
-                {"role": "assistant", "content": raw.strip()},
+                {"role": "assistant", "content": call_clean},
                 {"role": "user", "content": f"[tool result]\n{tool_result}"},
             ]
-            final_raw = _safe_generate(
-                followup_messages, max_new_tokens=120, temperature=0.1, label="lora-2"
-            )
-            if not final_raw.startswith("⚠️"):
-                final_call, final_vis = extract_tool_call(final_raw)
-                final_answer_text = _clean_visible(final_vis)
+            # Slightly higher temp on second turn so the model phrases naturally
+            # instead of falling back into another tool call. Up to two retries
+            # if the model emits another tool_call or empty output.
+            final_answer_text = ""
+            for attempt in range(2):
+                final_raw = _safe_generate(
+                    followup_messages, max_new_tokens=120,
+                    temperature=0.3 + 0.2 * attempt, label="lora-2",
+                )
+                if final_raw.startswith("⚠️"):
+                    break
+                _f_call, f_vis = extract_tool_call(final_raw)
+                cleaned = _clean_visible(f_vis)
+                if cleaned:
+                    final_answer_text = cleaned
+                    break
 
     if final_answer_text:
         parts.append(f"💬 **Reply:** {final_answer_text}")
