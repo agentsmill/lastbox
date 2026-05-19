@@ -265,6 +265,17 @@ def respond_lora(message: str, history: list) -> str:
                     final_answer_text = cleaned
                     break
 
+            # Fallback: if the model couldn't produce a final reply (rate
+            # limit, empty output, or kept emitting tool_calls), surface the
+            # tool_result itself — for search_knowledge this is usually the
+            # actually useful payload anyway.
+            if not final_answer_text and tool_result and not tool_result.startswith("("):
+                # Trim to byte cap for the LoRa tab
+                snippet = tool_result
+                while len(snippet.encode("utf-8")) > 150 and " " in snippet:
+                    snippet = snippet.rsplit(" ", 1)[0]
+                final_answer_text = snippet
+
     if final_answer_text:
         parts.append(f"💬 **Reply:** {final_answer_text}")
         nb = len(final_answer_text.encode("utf-8"))
