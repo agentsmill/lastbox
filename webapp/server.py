@@ -29,7 +29,21 @@ from pathlib import Path
 
 PORT = int(os.environ.get("LASTBOX_WEBAPP_PORT", "8080"))
 LLAMA_URL = os.environ.get("LLAMA_URL", "http://127.0.0.1:11436/v1/chat/completions")
+EMBED_URL = os.environ.get("EMBED_URL", "http://127.0.0.1:11437/v1/embeddings")
 STATIC_DIR = Path(__file__).parent / "static"
+RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "4"))
+
+# Optional RAG index — load once at startup, retrieve at request time.
+_RAG_VEC = None
+_RAG_META: list[dict] | None = None
+try:
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).parent))
+    from rag.retrieve import load_index, embed_query, topk  # type: ignore
+    _RAG_VEC, _RAG_META = load_index()
+    print(f"[rag] loaded index: {_RAG_VEC.shape[0]} passages, dim={_RAG_VEC.shape[1]}")
+except Exception as _e:
+    print(f"[rag] disabled ({_e})")
 
 # rpicam-vid stream tuning: 640x480, 15 fps, MJPEG, infinite duration.
 # Smaller resolution = lower CPU, faster perceived stream over LAN.
@@ -250,12 +264,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def _handle_chat(self) -> None:
-        """Free-form chat — no byte cap, longer answers, optional vision.
+        """Free-form chat — no byte cap, longer answers, optional vision/RAG.
 
         Distinct from /radio-query (terse, 150-byte LoRa cap) and /snap
         (always grabs a frame). This is the "talk to your survival assistant
         like a real assistant" path: longer max_tokens, no cap, vision frame
-        is *optional* via include_image.
+        is *optional* via include_image, RAG is *optional* via
+        ?rag=true (query param) or {"rag": true} (body).
         """
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length) if length else b"{}"
@@ -265,10 +280,33 @@ class Handler(BaseHTTPRequestHandler):
             req = {}
         msg = (req.get("message") or "").strip()
         include_image = bool(req.get("include_image"))
+        # rag toggle — body flag OR ?rag=true query string
+        use_rag = bool(req.get("rag")) or ("rag=true" in self.path)
         if not msg:
             return self._send_json(400, {"error": "message required"})
 
+        # RAG: embed query → top-k cosine → inject passages into system prompt
+        rag_hits: list[dict] = []
+        rag_block = ""
+        if use_rag and _RAG_VEC is not None and _RAG_META is not None:
+            try:
+                qv = embed_query(msg, EMBED_URL)
+                rag_hits = topk(_RAG_VEC, _RAG_META, qv, k=RAG_TOP_K)
+                lines = [
+                    "Reference passages retrieved from the on-device offline "
+                    "knowledge base (survival manuals + Wikipedia + training "
+                    "examples). Use them when relevant; quote source IDs in "
+                    "square brackets when you do:",
+                    "",
+                ]
+                for h in rag_hits:
+                    lines.append(f"[{h['id']} · {h['source']}] {h['text']}")
+                rag_block = "\n".join(lines) + "\n\n"
+            except Exception as e:
+                rag_block = f"(RAG retrieval failed: {e})\n\n"
+
         sys_prompt = (
+            rag_block +
             "You are LastBox. You are running offline on a battery-powered "
             "Raspberry Pi 5 in a sealed case, somewhere in the field. There "
             "is no internet, no cell signal, no 911, no hospital, no expert "
@@ -338,6 +376,16 @@ class Handler(BaseHTTPRequestHandler):
             "bytes": len(answer.encode("utf-8")),
             "latency_ms": latency_ms,
             "with_image": include_image,
+            "rag": [
+                {
+                    "id": h["id"],
+                    "source": h["source"],
+                    "category": h["category"],
+                    "kind": h["kind"],
+                    "score": h.get("score"),
+                }
+                for h in rag_hits
+            ] if rag_hits else [],
         }
         if snapshot_b64:
             result["snapshot"] = f"data:image/jpeg;base64,{snapshot_b64}"
