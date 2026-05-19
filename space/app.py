@@ -226,55 +226,68 @@ def respond_lora(message: str, history: list) -> str:
                 f"🔧 **Tool intent (malformed JSON, harness logged it):** `{call['name']}`  \n"
                 f"`raw:` `{args_preview}`"
             )
+            # Best-effort: recover the most useful argument from raw fragment
+            # so we can still simulate a tool result + run the second turn.
+            recovered_args: dict = {}
+            raw_arg = call.get("arguments_raw") or ""
+            q_match = re.search(r'"query"\s*:\s*"([^"]+)', raw_arg)
+            if q_match:
+                recovered_args["query"] = q_match.group(1)
+            text_match = re.search(r'"text"\s*:\s*"([^"]+)', raw_arg)
+            if text_match:
+                recovered_args["text"] = text_match.group(1)
+            # Promote malformed call into a "best-effort" call object so the
+            # downstream second-turn path can run.
+            call = {"name": call["name"], "arguments": recovered_args}
         else:
             args_pretty = json.dumps(call.get("arguments", {}), ensure_ascii=False)
             parts.append(f"🔧 **Tool call:** `{call['name']}({args_pretty})`")
 
-            # Two-turn orchestration: simulate the tool result + ask the model
-            # to deliver the final byte-capped answer with that context.
-            tool_result = _simulate_tool_result(call)
-            parts.append(f"🛰️ **Tool result:** *{tool_result}*")
+        # Two-turn orchestration: simulate the tool result + ask the model
+        # to deliver the final byte-capped answer with that context.
+        # (Runs for both well-formed and recovered-from-malformed calls.)
+        tool_result = _simulate_tool_result(call)
+        parts.append(f"🛰️ **Tool result:** *{tool_result}*")
 
-            # Build a clean assistant tool_call message — strip any pre/post
-            # tokens so the second turn sees exactly what training looked like.
-            call_clean = (
-                "<tool_call>"
-                + json.dumps({"name": call["name"], "arguments": call.get("arguments", {})},
-                             ensure_ascii=False)
-                + "</tool_call>"
+        # Build a clean assistant tool_call message — strip any pre/post
+        # tokens so the second turn sees exactly what training looked like.
+        call_clean = (
+            "<tool_call>"
+            + json.dumps({"name": call["name"], "arguments": call.get("arguments", {})},
+                         ensure_ascii=False)
+            + "</tool_call>"
+        )
+        followup_messages = [
+            {"role": "user", "content": user_content},
+            {"role": "assistant", "content": call_clean},
+            {"role": "user", "content": f"[tool result]\n{tool_result}"},
+        ]
+        # Slightly higher temp on second turn so the model phrases naturally
+        # instead of falling back into another tool call. Up to two retries
+        # if the model emits another tool_call or empty output.
+        final_answer_text = ""
+        for attempt in range(2):
+            final_raw = _safe_generate(
+                followup_messages, max_new_tokens=120,
+                temperature=0.3 + 0.2 * attempt, label="lora-2",
             )
-            followup_messages = [
-                {"role": "user", "content": user_content},
-                {"role": "assistant", "content": call_clean},
-                {"role": "user", "content": f"[tool result]\n{tool_result}"},
-            ]
-            # Slightly higher temp on second turn so the model phrases naturally
-            # instead of falling back into another tool call. Up to two retries
-            # if the model emits another tool_call or empty output.
-            final_answer_text = ""
-            for attempt in range(2):
-                final_raw = _safe_generate(
-                    followup_messages, max_new_tokens=120,
-                    temperature=0.3 + 0.2 * attempt, label="lora-2",
-                )
-                if final_raw.startswith("⚠️"):
-                    break
-                _f_call, f_vis = extract_tool_call(final_raw)
-                cleaned = _clean_visible(f_vis)
-                if cleaned:
-                    final_answer_text = cleaned
-                    break
+            if final_raw.startswith("⚠️"):
+                break
+            _f_call, f_vis = extract_tool_call(final_raw)
+            cleaned = _clean_visible(f_vis)
+            if cleaned:
+                final_answer_text = cleaned
+                break
 
-            # Fallback: if the model couldn't produce a final reply (rate
-            # limit, empty output, or kept emitting tool_calls), surface the
-            # tool_result itself — for search_knowledge this is usually the
-            # actually useful payload anyway.
-            if not final_answer_text and tool_result and not tool_result.startswith("("):
-                # Trim to byte cap for the LoRa tab
-                snippet = tool_result
-                while len(snippet.encode("utf-8")) > 150 and " " in snippet:
-                    snippet = snippet.rsplit(" ", 1)[0]
-                final_answer_text = snippet
+        # Fallback: if the model couldn't produce a final reply (rate
+        # limit, empty output, or kept emitting tool_calls), surface the
+        # tool_result itself — for search_knowledge this is usually the
+        # actually useful payload anyway.
+        if not final_answer_text and tool_result and not tool_result.startswith("("):
+            snippet = tool_result
+            while len(snippet.encode("utf-8")) > 150 and " " in snippet:
+                snippet = snippet.rsplit(" ", 1)[0]
+            final_answer_text = snippet
 
     if final_answer_text:
         parts.append(f"💬 **Reply:** {final_answer_text}")
