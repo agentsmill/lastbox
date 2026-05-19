@@ -9,6 +9,11 @@ hazards from its camera, and relays mesh messages — fully offline,
 
 → Full technical write-up: **[`gemma4/SUBMISSION.md`](gemma4/SUBMISSION.md)**
 
+> **Submission snapshot:** the state of this repo at the 2026-05-18 23:59 UTC
+> deadline is tagged [`v1-submission`](https://github.com/agentsmill/lastbox/tree/v1-submission).
+> Anything after that tag is **post-deadline research**, not part of judging
+> (see ["Post-deadline research" below](#post-deadline-research-not-part-of-submission)).
+
 ## Repo map
 
 ```
@@ -64,6 +69,41 @@ xdg-open http://lastbox.local:8080/
 
 See `gemma4/SUBMISSION.md` §"Reproducing" — `generate → process → train_sft →
 convert → quantize → rsync` in ~1.5 h on a single GB10 (or any modern CUDA box).
+
+## Post-deadline research (not part of submission)
+
+After the deadline we kept iterating to test the v1 roadmap items in practice.
+Headline numbers vs the v3 SFT shipped at deadline (golden_en, n=25):
+
+| Metric              | v3 (submission) | v6 (post-deadline) |
+|---------------------|-----------------|--------------------|
+| tool_emission_rate  | ~0%             | **72%**            |
+| tool_accuracy       | 0%              | **64%**            |
+| agentic_score       | 0.016           | **0.608** (38×)    |
+| byte_compliance     | 0.48            | **1.000**          |
+| format_ok           | 0.52            | **1.000**          |
+| response_quality    | 0.506           | **1.000**          |
+| completed/25        | 14              | **25**             |
+
+What changed (commits after [`v1-submission`](https://github.com/agentsmill/lastbox/tree/v1-submission)):
+
+- **RAG live on the box** — `bge-small-en-v1.5` embed-server + 4 074-passage
+  index (train_v2 + Wikipedia first-aid/bushcraft + manuals) + cosine top-k.
+  `webapp/server.py` exposes `/chat?rag=true` that cites source IDs.
+- **GRPO v4 + v5** — two iterations with different reward designs; both
+  plateaued at 0% tool emission. Diagnosis in `SUBMISSION.md`:
+  GRPO with KL β=0.04 cannot move a base with p(tool)≈0 to ≈1 in 200 steps.
+- **v6 SFT warmup** — 12-min targeted SFT on 1 034 tool-only pairs from
+  `train_v2.jsonl`. Sets the prior; lifts tool emission from 0% → 72%.
+- **Eval methodology fixes** — (a) the original eval was passing
+  `SYSTEM_PROMPT_EN` without the tool definitions JSON, suppressing tool
+  emission; (b) streaming SSE was disconnecting mid-stream on 12/25 queries,
+  pulling format/byte/persona to a 0.52 floor that was *never* a quality
+  issue. Non-streaming POST + retry → 25/25 completion.
+
+`gemma4/SUBMISSION.md` has the full retrospective with reward designs,
+training hyperparameters, and the lesson kept: *SFT prior + GRPO refines*
+beats *GRPO from zero* for forcing new behaviours under a KL constraint.
 
 ## Roadmap (wired, not vapor)
 
