@@ -170,20 +170,55 @@ def _safe_generate(messages, max_new_tokens, temperature, label="chat"):
         return f"⚠️ Model generation failed ({type(e).__name__}). Try again in a few seconds — ZeroGPU may be queued."
 
 
+def _simulate_tool_result(call: dict) -> str:
+    """Run a realistic-ish tool result so the model can produce its final
+    answer (matches how `demo.py` orchestrates on the real device).
+
+    For `search_knowledge` we hit the RAG corpus for a top-1 passage. The
+    other tools get static plausible stubs.
+    """
+    name = call.get("name", "")
+    args = call.get("arguments", {}) or {}
+
+    if name == "search_knowledge":
+        q = args.get("query") or ""
+        try:
+            hits = rag_retrieve(q, k=1) if q else []
+            if hits:
+                return hits[0]["text"][:300]
+        except Exception:
+            pass
+        return "No matching entry found in the local knowledge base."
+    if name == "send_lora_message":
+        return f"OK — message queued for transmission on 868 MHz (SNR -10 dB, est. relay ETA 1.2 s)."
+    if name == "listen_lora":
+        return "Channel idle for the requested window. No SOS or pattern hits."
+    if name == "analyze_signal":
+        return "Last 60s: 3 packets received, RSSI -82..-91 dBm, SNR 4-7, 1 node visible."
+    if name == "get_system_status":
+        return "CPU 38%, RAM 5.2/8 GB, SoC 56°C, battery 84% (drain 0.4 W), RSSI -88 dBm."
+    if name == "capture_image":
+        return "Image captured but vision is disabled in this Space demo."
+    if name == "update_memory":
+        return f"Memory updated: {args}"
+    return "(tool succeeded)"
+
+
 def respond_lora(message: str, history: list) -> str:
     message = (message or "").strip()
     if not message:
         return "*(empty query)*"
     user_full = f"[source: lora] {message}"
-    messages = [{"role": "user", "content": f"{SYSTEM_WITH_TOOLS}\n\n{user_full}"}]
+    user_content = f"{SYSTEM_WITH_TOOLS}\n\n{user_full}"
+    messages = [{"role": "user", "content": user_content}]
     raw = _safe_generate(messages, max_new_tokens=200, temperature=0.1, label="lora")
     if raw.startswith("⚠️"):
         return raw
     call, visible = extract_tool_call(raw)
     visible = _clean_visible(visible)
-    nb = len(visible.encode("utf-8"))
-    cap = "✓ within cap" if nb <= 150 else "⚠ over cap"
-    parts = []
+    parts: list[str] = []
+    final_answer_text = ""
+
     if call:
         if call.get("_malformed"):
             args_preview = (call.get("arguments_raw") or "")[:120]
@@ -192,15 +227,40 @@ def respond_lora(message: str, history: list) -> str:
                 f"`raw:` `{args_preview}`"
             )
         else:
-            args = call.get("arguments", {})
-            args_pretty = json.dumps(args, ensure_ascii=False)
+            args_pretty = json.dumps(call.get("arguments", {}), ensure_ascii=False)
             parts.append(f"🔧 **Tool call:** `{call['name']}({args_pretty})`")
-    if visible:
+
+            # Two-turn orchestration: simulate the tool result + ask the model
+            # to deliver the final byte-capped answer with that context.
+            tool_result = _simulate_tool_result(call)
+            parts.append(f"🛰️ **Tool result:** *{tool_result}*")
+
+            followup_messages = [
+                {"role": "user", "content": user_content},
+                {"role": "assistant", "content": raw.strip()},
+                {"role": "user", "content": f"[tool result]\n{tool_result}"},
+            ]
+            final_raw = _safe_generate(
+                followup_messages, max_new_tokens=120, temperature=0.1, label="lora-2"
+            )
+            if not final_raw.startswith("⚠️"):
+                final_call, final_vis = extract_tool_call(final_raw)
+                final_answer_text = _clean_visible(final_vis)
+
+    if final_answer_text:
+        parts.append(f"💬 **Reply:** {final_answer_text}")
+        nb = len(final_answer_text.encode("utf-8"))
+    elif visible:
         parts.append(visible)
+        nb = len(visible.encode("utf-8"))
     elif call:
-        parts.append("*(tool call only — in production the orchestrator runs the tool and feeds the result back to the model for the final reply)*")
+        parts.append("*(no final reply yet — tool result returned but second turn was empty)*")
+        nb = 0
     else:
         parts.append("*(no response — try rephrasing)*")
+        nb = 0
+
+    cap = "✓ within cap" if nb <= 150 else "⚠ over cap"
     parts.append(f"— *{nb} / 150 bytes [{cap}]*")
     return "\n\n".join(parts)
 
